@@ -1,0 +1,32 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+
+# ChromaDB
+chroma_db/
+
+# sentence-transformers cache
+.cache/
+
+# Testing
+.pytest_cache/
+.hypothesis/
+htmlcov/
+.coverage
+
+# IDEs
+.vscode/
+.idea/
+*.kiro
+
+# OS
+.DS_Store
+Thumbs.db

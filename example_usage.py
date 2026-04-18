@@ -31,8 +31,8 @@ def main() -> None:
     # --- Paso 3: Indexar un archivo individual ---
     print("=== Paso 3: Indexar archivo individual ===")
     print("Indexando el archivo './doc.pdf'...")
-    chunks_archivo = rag.add_file("./doc.pdf")
-    print(f"Se indexaron {chunks_archivo} fragmentos desde el archivo.\n")
+    #chunks_archivo = rag.add_file("./doc.pdf")
+    #print(f"Se indexaron {chunks_archivo} fragmentos desde el archivo.\n")
 
     # --- Paso 4: Realizar una búsqueda semántica ---
     print("=== Paso 4: Búsqueda semántica ===")

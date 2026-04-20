@@ -484,3 +484,156 @@ class TestRAGModuleDeletedCollectionProperty:
                 module.ask(query)
         finally:
             _stop_all(patches)
+
+
+# ---------------------------------------------------------------------------
+# Bug Condition Exploration & Preservation Property Tests
+# ---------------------------------------------------------------------------
+
+NO_RESULTS_MESSAGE = (
+    "No se encontraron documentos relevantes en la colección. "
+    "Indexe documentos antes de hacer preguntas."
+)
+
+
+class TestBugConditionExploration:
+    """Property-based exploration test for the empty-collection hallucination bug.
+
+    **Validates: Requirements 1.1, 1.2, 1.3, 2.1, 2.2, 2.3**
+
+    Mocks retriever.query to return [] (empty collection / no matches),
+    generates random query strings, and calls ask().  The assertions encode
+    the EXPECTED (fixed) behavior — on unfixed code the test is expected to
+    FAIL, which proves the bug exists.
+    """
+
+    @given(
+        query=st.text(
+            alphabet=st.characters(whitelist_categories=("L", "N")),
+            min_size=1,
+            max_size=80,
+        ),
+    )
+    @settings(max_examples=100, suppress_health_check=[HealthCheck.too_slow])
+    def test_empty_results_return_predefined_message(self, query):
+        """When search() returns [], ask() should return the predefined
+        no-results message, never call the generator, and leave history
+        unchanged.
+        """
+        module, mocks, patches = _make_rag_module_with_patches()
+        try:
+            # Force search to return empty results (bug condition)
+            module.retriever.query.return_value = []
+            module.embedder.embed_query.return_value = [0.0] * 384
+            module.generator.generate.return_value = "hallucinated answer"
+
+            history_before = len(module._history)
+
+            result = module.ask(query)
+
+            # Expected behavior after fix:
+            assert result["answer"] == NO_RESULTS_MESSAGE, (
+                f"Expected predefined no-results message, got: {result['answer']!r}"
+            )
+            assert result["sources"] == [], (
+                f"Expected empty sources, got: {result['sources']!r}"
+            )
+            module.generator.generate.assert_not_called()
+            assert len(module._history) == history_before, (
+                "History should not grow when search returns empty results"
+            )
+        finally:
+            _stop_all(patches)
+
+
+class TestPreservationProperty:
+    """Property-based preservation tests for ask() with non-empty results.
+
+    **Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5**
+
+    Verifies that when search() returns one or more results, the existing
+    behavior is preserved: generator is called, history grows, and the
+    returned dict has the correct structure.  These tests should PASS on
+    both unfixed and fixed code.
+    """
+
+    # Strategy: non-empty list of chunk dicts returned by retriever.query
+    _chunk_st = st.fixed_dictionaries({
+        "text": st.text(
+            alphabet=st.characters(whitelist_categories=("L", "N", "Z")),
+            min_size=1,
+            max_size=60,
+        ),
+        "metadata": st.fixed_dictionaries({
+            "source": st.from_regex(r"[a-z]{1,6}\.(txt|pdf)", fullmatch=True),
+            "page": st.integers(min_value=0, max_value=50),
+            "chunk_index": st.integers(min_value=0, max_value=100),
+        }),
+    })
+
+    @given(
+        query=st.text(
+            alphabet=st.characters(whitelist_categories=("L", "N")),
+            min_size=1,
+            max_size=80,
+        ),
+        chunks=st.lists(_chunk_st, min_size=1, max_size=5),
+    )
+    @settings(max_examples=100, suppress_health_check=[HealthCheck.too_slow])
+    def test_nonempty_results_call_generator_and_grow_history(self, query, chunks):
+        """When search() returns non-empty results, generator.generate is
+        called exactly once, _history grows by 1, and the returned dict
+        has the correct answer and sources.
+        """
+        module, mocks, patches = _make_rag_module_with_patches()
+        try:
+            module.retriever.query.return_value = chunks
+            module.embedder.embed_query.return_value = [0.0] * 384
+            generated_answer = "respuesta generada"
+            module.generator.generate.return_value = generated_answer
+
+            history_before = len(module._history)
+
+            result = module.ask(query)
+
+            # Generator must be called exactly once
+            module.generator.generate.assert_called_once()
+
+            # History must grow by exactly one entry
+            assert len(module._history) == history_before + 1
+            last_turn = module._history[-1]
+            assert last_turn["query"] == query
+            assert last_turn["answer"] == generated_answer
+
+            # Return structure must match
+            assert result["answer"] == generated_answer
+            assert result["sources"] == chunks
+        finally:
+            _stop_all(patches)
+
+    def test_deleted_collection_raises_runtime_error(self):
+        """Deleted collection must still raise RuntimeError before any
+        new guard logic.
+
+        **Validates: Requirements 3.2**
+        """
+        module, mocks, patches = _make_rag_module_with_patches()
+        try:
+            module.delete_collection()
+            with pytest.raises(RuntimeError, match="La colección ha sido eliminada"):
+                module.ask("any query")
+        finally:
+            _stop_all(patches)
+
+    def test_empty_query_raises_value_error(self):
+        """Empty query must still raise ValueError before any new guard
+        logic.
+
+        **Validates: Requirements 3.3**
+        """
+        module, mocks, patches = _make_rag_module_with_patches()
+        try:
+            with pytest.raises(ValueError, match="La consulta debe ser una cadena no vacía"):
+                module.ask("")
+        finally:
+            _stop_all(patches)

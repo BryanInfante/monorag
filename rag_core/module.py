@@ -224,6 +224,14 @@ class RAGModule:
 
         results = self.search(query, top_k=top_k)
 
+        # Guard: return predefined message when no relevant documents are found
+        if not results:
+            return {
+                "answer": "No se encontraron documentos relevantes en la colección. "
+                          "Indexe documentos antes de hacer preguntas.",
+                "sources": [],
+            }
+
         # Slice conversation history for the Generator
         history_slice = self._history[-self._max_history:] if self._max_history > 0 else []
 

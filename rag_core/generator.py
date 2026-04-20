@@ -25,12 +25,23 @@ class Generator:
         self.client = Groq(api_key=api_key)
         self.model = model
 
-    def generate(self, query: str, context_chunks: list[dict]) -> str:
+    def generate(
+        self,
+        query: str,
+        context_chunks: list[dict],
+        history: list[dict] | None = None,
+    ) -> str:
         """Generate an answer from query and context chunks.
 
         Args:
             query: The user's question.
             context_chunks: List of chunk dicts with text and metadata.
+            history: Optional list of past conversation turns. Each turn is a
+                dict with ``"query"`` and ``"answer"`` keys. Turns are inserted
+                as user/assistant message pairs between the system prompt and
+                the current user message in chronological order (oldest first).
+                When ``None`` or empty, behavior is identical to calling without
+                history.
 
         Returns:
             Generated answer string.
@@ -55,13 +66,20 @@ class Generator:
             f"Pregunta: {query}"
         )
 
+        # Build messages list: system prompt, then history turns, then current user message
+        messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+        if history:
+            for turn in history:
+                messages.append({"role": "user", "content": turn["query"]})
+                messages.append({"role": "assistant", "content": turn["answer"]})
+
+        messages.append({"role": "user", "content": user_message})
+
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_message},
-                ],
+                messages=messages,
             )
             return response.choices[0].message.content
         except Exception as e:

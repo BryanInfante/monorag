@@ -22,18 +22,27 @@ class RAGModule:
     to provide a unified interface for document processing and retrieval.
     """
 
-    def __init__(self, collection: str) -> None:
+    def __init__(self, collection: str, max_history: int = 10) -> None:
         """Initialize with a named collection.
 
         Args:
             collection: Name of the ChromaDB collection to create or connect to.
+            max_history: Maximum number of conversation history turns to send
+                to the Generator. Defaults to 10. A value of 0 disables history.
 
         Raises:
             ValueError: If collection name is not provided.
+            ValueError: If max_history is negative.
             RuntimeError: If GROQ_API_KEY is not set.
         """
         if not collection:
             raise ValueError("Se requiere un nombre de colección.")
+
+        if max_history < 0:
+            raise ValueError("max_history debe ser mayor o igual a 0.")
+
+        self._history: list[dict] = []
+        self._max_history = max_history
 
         load_dotenv()
         api_key = os.getenv("GROQ_API_KEY")
@@ -214,8 +223,23 @@ class RAGModule:
             raise ValueError("La consulta debe ser una cadena no vacía.")
 
         results = self.search(query, top_k=top_k)
-        answer = self.generator.generate(query, results)
+
+        # Slice conversation history for the Generator
+        history_slice = self._history[-self._max_history:] if self._max_history > 0 else []
+
+        answer = self.generator.generate(query, results, history=history_slice)
+
+        # Append turn only after successful generation
+        self._history.append({"query": query, "answer": answer})
+
         return {"answer": answer, "sources": results}
+
+    def clear_history(self) -> None:
+        """Clear all conversation history turns.
+
+        This method works regardless of collection state (_deleted flag).
+        """
+        self._history = []
 
     def delete_collection(self) -> None:
         """Delete the active collection and all its data.

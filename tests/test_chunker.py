@@ -32,16 +32,19 @@ class TestChunkerUnit:
         assert result[0]["metadata"]["source"] == "small.txt"
         assert result[0]["metadata"]["chunk_index"] == 0
 
-    def test_exactly_500_tokens_produces_two_chunks_due_to_overlap(self):
-        """Text with exactly 500 tokens produces 2 chunks because step=450 leaves a tail."""
+    def test_exactly_500_tokens_single_paragraph_produces_one_chunk(self):
+        """Text with exactly 500 tokens and no paragraph breaks fits in one chunk.
+
+        With paragraph-aware chunking, text without \\n\\n is a single
+        paragraph.  500 tokens == chunk_size, so it fits in one chunk.
+        """
         chunker = Chunker()
         text = " ".join(f"w{i}" for i in range(500))
         result = chunker.chunk(text, source="exact.txt")
 
-        # Step is 500-50=450, so position 450 still has 50 tokens left -> 2 chunks
-        assert len(result) == 2
+        assert len(result) == 1
         assert len(result[0]["text"].split()) == 500
-        assert len(result[1]["text"].split()) == 50
+        assert result[0]["metadata"]["chunk_index"] == 0
 
     def test_correct_chunk_index_sequencing(self):
         """Chunk indices should be sequential starting from 0."""
@@ -184,3 +187,133 @@ class TestChunkerProperties:
             assert meta["chunk_index"] == i, (
                 f"Expected chunk_index {i}, got {meta['chunk_index']}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Edge-Case Unit Tests for Smart Chunking
+# ---------------------------------------------------------------------------
+
+import inspect
+
+
+class TestSmartChunkingEdgeCases:
+    """Example-based edge-case tests for paragraph-aware chunking."""
+
+    # 1. Requirement 8.1
+    def test_empty_string_returns_empty(self):
+        """chunk('', source='t.txt') returns []."""
+        chunker = Chunker()
+        assert chunker.chunk("", source="t.txt") == []
+
+    # 2. Requirement 8.2
+    def test_whitespace_only_returns_empty(self):
+        """chunk('   \\n\\t  ', source='t.txt') returns []."""
+        chunker = Chunker()
+        assert chunker.chunk("   \n\t  ", source="t.txt") == []
+
+    # 3. Requirement 8.3
+    def test_single_small_paragraph_returns_one_chunk(self):
+        """Text with < chunk_size tokens and no \\n\\n returns exactly 1 chunk."""
+        chunker = Chunker(chunk_size=20, overlap=0)
+        text = "hello world foo bar"
+        result = chunker.chunk(text, source="t.txt")
+        assert len(result) == 1
+        assert result[0]["text"] == text
+
+    # 4. Requirement 1.4
+    def test_no_paragraph_breaks_treated_as_single_paragraph(self):
+        """Text without \\n\\n is treated as one paragraph."""
+        chunker = Chunker(chunk_size=50, overlap=0)
+        text = "one two three four five six seven eight nine ten"
+        result = chunker.chunk(text, source="t.txt")
+        assert len(result) == 1
+        assert result[0]["text"] == text
+
+    # 5. Requirement 3.2
+    def test_large_paragraph_flushes_accumulated_small_paragraphs(self):
+        """When a large paragraph follows small ones, the small ones are flushed first."""
+        chunker = Chunker(chunk_size=10, overlap=0)
+        large_para = " ".join(f"w{i}" for i in range(15))
+        text = "a b c\n\n" + large_para
+        result = chunker.chunk(text, source="t.txt")
+
+        # First chunk must contain the small paragraph
+        assert "a b c" in result[0]["text"]
+        # Subsequent chunks contain the large paragraph tokens
+        large_tokens = large_para.split()
+        remaining_tokens = []
+        for ch in result[1:]:
+            remaining_tokens.extend(ch["text"].split())
+        for token in large_tokens:
+            assert token in remaining_tokens
+
+    # 6. Requirement 8.5
+    def test_empty_pages_returns_empty(self):
+        """chunk_pages([], source='t.txt') returns []."""
+        chunker = Chunker()
+        assert chunker.chunk_pages([], source="t.txt") == []
+
+    # 7. Requirement 7.1
+    def test_constructor_defaults_unchanged(self):
+        """Chunker() has chunk_size=500 and overlap=50."""
+        chunker = Chunker()
+        assert chunker.chunk_size == 500
+        assert chunker.overlap == 50
+
+    # 8. Requirement 7.2
+    def test_chunk_signature_unchanged(self):
+        """chunk() accepts (text, source, start_page) params."""
+        sig = inspect.signature(Chunker.chunk)
+        params = list(sig.parameters.keys())
+        assert "self" in params
+        assert "text" in params
+        assert "source" in params
+        assert "start_page" in params
+
+    # 9. Requirement 7.3
+    def test_chunk_pages_signature_unchanged(self):
+        """chunk_pages() accepts (pages, source) params."""
+        sig = inspect.signature(Chunker.chunk_pages)
+        params = list(sig.parameters.keys())
+        assert "self" in params
+        assert "pages" in params
+        assert "source" in params
+
+    # 10. Requirement 8.4
+    def test_all_large_paragraphs_use_token_fallback(self):
+        """Text where every paragraph exceeds chunk_size uses token windowing."""
+        chunker = Chunker(chunk_size=5, overlap=0)
+        para1 = " ".join(f"a{i}" for i in range(10))
+        para2 = " ".join(f"b{i}" for i in range(10))
+        text = para1 + "\n\n" + para2
+        result = chunker.chunk(text, source="t.txt")
+
+        for ch in result:
+            assert len(ch["text"].split()) <= 5
+
+    # 11. Requirement 4.3
+    def test_overlap_zero_no_shared_tokens(self):
+        """With overlap=0, consecutive chunks share no tokens."""
+        chunker = Chunker(chunk_size=5, overlap=0)
+        text = " ".join(f"t{i}" for i in range(20))
+        result = chunker.chunk(text, source="t.txt")
+
+        assert len(result) >= 2
+        for i in range(len(result) - 1):
+            current_tokens = set(result[i]["text"].split())
+            next_tokens = set(result[i + 1]["text"].split())
+            assert current_tokens & next_tokens == set()
+
+    # 12. Requirement 7.5
+    def test_output_dict_format(self):
+        """Output has {"text": str, "metadata": {"source": str, "page": int, "chunk_index": int}}."""
+        chunker = Chunker(chunk_size=50, overlap=0)
+        result = chunker.chunk("hello world", source="t.txt")
+
+        assert len(result) == 1
+        chunk = result[0]
+        assert isinstance(chunk["text"], str)
+        meta = chunk["metadata"]
+        assert isinstance(meta["source"], str)
+        assert isinstance(meta["page"], int)
+        assert isinstance(meta["chunk_index"], int)

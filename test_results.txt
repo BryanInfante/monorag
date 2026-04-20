@@ -1,0 +1,20 @@
+﻿......................................................F
+================================== FAILURES ===================================
+_______ TestExtractTxtProperties.test_txt_round_trip_preserves_content ________
+tests\test_utils.py:111: in test_txt_round_trip_preserves_content
+    @settings(max_examples=100)
+               ^^^^^^^
+tests\test_utils.py:123: in test_txt_round_trip_preserves_content
+    f.write(content)
+..\..\AppData\Local\Programs\Python\Python312\Lib\tempfile.py:499: in func_wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+E   UnicodeEncodeError: 'utf-8' codec can't encode character '\ud800' in position 0: surrogates not allowed
+E   Falsifying example: test_txt_round_trip_preserves_content(
+E       self=<tests.test_utils.TestExtractTxtProperties object at 0x000001B0D3D751F0>,
+E       content='\ud800',
+E   )
+=========================== short test summary info ===========================
+FAILED tests/test_utils.py::TestExtractTxtProperties::test_txt_round_trip_preserves_content
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 54 passed in 156.75s (0:02:36)

@@ -17,10 +17,10 @@ monorag/
 ├── rag_core/              # Paquete principal
 │   ├── __init__.py        # Exporta RAGModule
 │   ├── module.py          # Orquestador principal (RAGModule)
-│   ├── chunker.py         # Fragmentación de texto por tokens
-│   ├── embedder.py        # Generación de embeddings
+│   ├── chunker.py         # Fragmentación inteligente por párrafos
+│   ├── embedder.py        # Generación de embeddings por lotes
 │   ├── retriever.py       # Operaciones con ChromaDB
-│   ├── generator.py       # Generación de respuestas vía Groq
+│   ├── generator.py       # Generación de respuestas vía Groq (con historial)
 │   └── utils.py           # Extracción de texto (PDF, TXT)
 ├── tests/                 # Tests unitarios y property-based
 ├── docs/                  # Documentos para indexar
@@ -102,10 +102,17 @@ resultados = rag.search("¿Qué es un ensayo no destructivo?", top_k=5)
 for r in resultados:
     print(r["text"][:100], r["metadata"])
 
-# Pregunta con respuesta generada
+# Pregunta con respuesta generada (acumula historial automáticamente)
 respuesta = rag.ask("¿Cuáles son los tipos de líquidos penetrantes?")
 print(respuesta["answer"])
 print(respuesta["sources"])
+
+# Pregunta de seguimiento (el LLM recuerda la conversación anterior)
+respuesta = rag.ask("¿Puedes dar más detalles sobre el primero?")
+print(respuesta["answer"])
+
+# Limpiar historial de conversación
+rag.clear_history()
 
 # Listar colecciones
 print(rag.list_collections())
@@ -114,17 +121,37 @@ print(rag.list_collections())
 rag.delete_collection()
 ```
 
+### Historial de conversación
+
+`RAGModule` mantiene un historial en memoria de las preguntas y respuestas anteriores. Cada llamada a `ask()` envía los últimos N turnos al LLM para que pueda responder preguntas de seguimiento con contexto.
+
+```python
+# Configurar el número máximo de turnos (por defecto 10)
+rag = RAGModule(collection="mi_coleccion", max_history=5)
+
+# Cada ask() acumula historial automáticamente
+rag.ask("¿Qué dice el documento sobre seguridad?")
+rag.ask("¿Y sobre los procedimientos de emergencia?")  # El LLM recuerda la pregunta anterior
+
+# Limpiar historial para empezar un tema nuevo
+rag.clear_history()
+
+# Desactivar historial completamente
+rag_sin_historial = RAGModule(collection="otra", max_history=0)
+```
+
 ## API de RAGModule
 
-| Método                              | Descripción                                      |
-|-------------------------------------|--------------------------------------------------|
-| `RAGModule(collection)`             | Inicializa con una colección nombrada            |
-| `add_documents(directory) -> int`   | Indexa todos los PDF/TXT de un directorio        |
-| `add_file(file_path) -> int`        | Indexa un archivo individual (PDF o TXT)         |
-| `search(query, top_k=5) -> list`    | Búsqueda semántica, retorna fragmentos           |
-| `ask(query, top_k=5) -> dict`       | Pregunta al LLM, retorna respuesta y fuentes     |
-| `list_collections() -> list`        | Lista todas las colecciones existentes           |
-| `delete_collection()`               | Elimina la colección activa y sus datos          |
+| Método                                          | Descripción                                      |
+|-------------------------------------------------|--------------------------------------------------|
+| `RAGModule(collection, max_history=10)`         | Inicializa con una colección y historial opcional |
+| `add_documents(directory) -> int`               | Indexa todos los PDF/TXT de un directorio        |
+| `add_file(file_path) -> int`                    | Indexa un archivo individual (PDF o TXT)         |
+| `search(query, top_k=5) -> list`                | Búsqueda semántica, retorna fragmentos           |
+| `ask(query, top_k=5) -> dict`                   | Pregunta al LLM con historial, retorna respuesta |
+| `clear_history()`                               | Limpia el historial de conversación              |
+| `list_collections() -> list`                    | Lista todas las colecciones existentes           |
+| `delete_collection()`                           | Elimina la colección activa y sus datos          |
 
 ## Formatos soportados
 
@@ -145,15 +172,27 @@ El proyecto usa **pytest** para tests unitarios y **hypothesis** para tests basa
 
 ```
 RAGModule (orquestador)
-├── Chunker      → Fragmenta texto en chunks con solapamiento (500 tokens, 50 overlap)
-├── Embedder     → Genera embeddings con sentence-transformers
+├── Chunker      → Fragmentación inteligente por párrafos (500 tokens, 50 overlap)
+├── Embedder     → Embeddings por lotes configurables (batch_size=256)
 ├── Retriever    → Almacena y consulta vectores en ChromaDB
-└── Generator    → Genera respuestas con Groq API (llama-3.3-70b-versatile)
+└── Generator    → Respuestas vía Groq API con historial de conversación
 ```
 
-**Flujo de indexación:** Archivo → Extracción de texto → Fragmentación → Embeddings → ChromaDB
+**Flujo de indexación:** Archivo → Extracción de texto → Fragmentación por párrafos → Embeddings por lotes → ChromaDB
 
-**Flujo de consulta:** Pregunta → Embedding → Búsqueda por similitud → Contexto + Pregunta → LLM → Respuesta
+**Flujo de consulta:** Pregunta → Embedding → Búsqueda por similitud → Historial + Contexto + Pregunta → LLM → Respuesta
+
+### Chunking inteligente
+
+El Chunker respeta los límites de párrafo (doble salto de línea `\n\n`) al fragmentar texto. Los párrafos pequeños se acumulan en un solo chunk hasta alcanzar el límite de tokens. Los párrafos que exceden el límite se dividen con ventana deslizante como fallback. Esto produce chunks más coherentes para el LLM.
+
+### Batch embeddings
+
+El Embedder procesa textos en lotes configurables (por defecto 256) en lugar de todos a la vez. Esto reduce el consumo de memoria al indexar grandes volúmenes de documentos. El progreso se registra a nivel INFO cuando hay múltiples lotes.
+
+### Historial de conversación
+
+El Generator recibe los últimos N turnos de conversación (configurable via `max_history`) como mensajes user/assistant entre el system prompt y la pregunta actual. Esto permite al LLM mantener contexto entre preguntas consecutivas.
 
 ## Licencia
 

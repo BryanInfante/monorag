@@ -1,6 +1,6 @@
-"""Generator component for LLM-powered answer generation via Groq API."""
+"""Generator component for LLM-powered answer generation via any OpenAI-compatible API."""
 
-from groq import Groq
+from openai import OpenAI
 
 # System prompt in Spanish for technical normative document Q&A
 SYSTEM_PROMPT = (
@@ -13,16 +13,17 @@ SYSTEM_PROMPT = (
 
 
 class Generator:
-    """Generates answers using the Groq API."""
+    """Generates answers using any OpenAI-compatible API."""
 
-    def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile") -> None:
-        """Initialize the Groq client.
+    def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile", base_url: str | None = None) -> None:
+        """Initialize the OpenAI-compatible client.
 
         Args:
-            api_key: Groq API key.
+            api_key: API key for the LLM provider.
             model: Model identifier for chat completions.
+            base_url: Optional base URL for OpenAI-compatible APIs (e.g. Ollama, LM Studio).
         """
-        self.client = Groq(api_key=api_key)
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model = model
 
     def generate(
@@ -83,4 +84,4 @@ class Generator:
             )
             return response.choices[0].message.content
         except Exception as e:
-            raise RuntimeError(f"Error de la API de Groq: {e}") from e
+            raise RuntimeError(f"Error al llamar al LLM: {e}") from e

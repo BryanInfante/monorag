@@ -6,7 +6,7 @@ Sistema de Recuperación Aumentada por Generación (RAG) para documentos técnic
 
 - **ChromaDB** — almacenamiento vectorial persistente
 - **sentence-transformers** (`all-MiniLM-L6-v2`) — embeddings
-- **Groq API** (`llama-3.3-70b-versatile`) — generación de respuestas
+- **OpenAI-compatible API** — generación de respuestas (Groq, OpenAI, Ollama, LM Studio, etc.)
 - **pdfplumber** — extracción de texto de PDFs
 - **Rich** — interfaz CLI interactiva
 
@@ -50,16 +50,36 @@ pip install -r requirements.txt
 
 ## Configuración
 
-Crea un archivo `.env` en la raíz del proyecto con tu clave de API de Groq:
-
-```env
-GROQ_API_KEY=tu_clave_aqui
-```
-
-Puedes copiar la plantilla incluida:
+Crea un archivo `.env` en la raíz del proyecto. Copia la plantilla incluida:
 
 ```bash
 cp .env.example .env
+```
+
+Variables disponibles:
+
+| Variable       | Descripción                                      | Requerida |
+|----------------|--------------------------------------------------|-----------|
+| `LLM_API_KEY`  | Clave de API del proveedor LLM                   | Sí        |
+| `LLM_BASE_URL` | URL base del endpoint (Groq, Ollama, LM Studio…) | No        |
+| `LLM_MODEL`    | Nombre del modelo a usar                         | No        |
+
+Ejemplos por proveedor:
+
+```env
+# Groq
+LLM_API_KEY=gsk_...
+LLM_BASE_URL=https://api.groq.com/openai/v1
+LLM_MODEL=llama-3.3-70b-versatile
+
+# OpenAI
+LLM_API_KEY=sk-...
+LLM_MODEL=gpt-4o
+
+# Ollama (local)
+LLM_API_KEY=ollama
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_MODEL=llama3.2
 ```
 
 ## Uso
@@ -144,7 +164,7 @@ rag_sin_historial = RAGModule(collection="otra", max_history=0)
 
 | Método                                          | Descripción                                      |
 |-------------------------------------------------|--------------------------------------------------|
-| `RAGModule(collection, max_history=10)`         | Inicializa con una colección y historial opcional |
+| `RAGModule(collection, max_history=10, llm_api_key=None, llm_base_url=None, llm_model=None)` | Inicializa con colección, historial y configuración LLM |
 | `add_documents(directory) -> int`               | Indexa todos los PDF/TXT de un directorio        |
 | `add_file(file_path) -> int`                    | Indexa un archivo individual (PDF o TXT)         |
 | `search(query, top_k=5) -> list`                | Búsqueda semántica, retorna fragmentos           |
@@ -175,7 +195,7 @@ RAGModule (orquestador)
 ├── Chunker      → Fragmentación inteligente por párrafos (500 tokens, 50 overlap)
 ├── Embedder     → Embeddings por lotes configurables (batch_size=256)
 ├── Retriever    → Almacena y consulta vectores en ChromaDB
-└── Generator    → Respuestas vía Groq API con historial de conversación
+└── Generator    → Respuestas vía API compatible con OpenAI con historial de conversación
 ```
 
 **Flujo de indexación:** Archivo → Extracción de texto → Fragmentación por párrafos → Embeddings por lotes → ChromaDB

@@ -28,9 +28,9 @@ def _build_rag_module(collection="test-col", monkeypatch=None, env_key="fake-key
     mocks = {k: p.start() for k, p in patches.items()}
 
     if monkeypatch:
-        monkeypatch.setenv("GROQ_API_KEY", env_key)
+        monkeypatch.setenv("LLM_API_KEY", env_key)
     else:
-        os.environ["GROQ_API_KEY"] = env_key
+        os.environ["LLM_API_KEY"] = env_key
 
     module = RAGModule(collection)
     return module, mocks, patches
@@ -58,10 +58,14 @@ class TestRAGModuleInit:
                 RAGModule(None)
 
     def test_missing_api_key_raises_runtime_error(self, monkeypatch):
-        """Missing GROQ_API_KEY should raise RuntimeError with Spanish message."""
+        """Missing API key (all sources) should raise RuntimeError with Spanish message."""
+        monkeypatch.delenv("LLM_API_KEY", raising=False)
         monkeypatch.delenv("GROQ_API_KEY", raising=False)
-        with patch("rag_core.module.load_dotenv"):
-            with pytest.raises(RuntimeError, match="GROQ_API_KEY"):
+        with patch("rag_core.module.load_dotenv"), \
+             patch("rag_core.module.Embedder"), \
+             patch("rag_core.module.Retriever"), \
+             patch("rag_core.module.Generator"):
+            with pytest.raises(RuntimeError, match="LLM_API_KEY"):
                 RAGModule("test-col")
 
 
@@ -235,7 +239,7 @@ def _make_rag_module_with_patches():
         "dotenv": patch("rag_core.module.load_dotenv"),
     }
     mocks = {k: v.start() for k, v in p.items()}
-    os.environ["GROQ_API_KEY"] = "fake-key-for-pbt"
+    os.environ["LLM_API_KEY"] = "fake-key-for-pbt"
     module = RAGModule("pbt-collection")
     return module, mocks, p
 
@@ -244,7 +248,7 @@ def _stop_all(patches):
     """Stop all active patches and clean up env."""
     for p in patches.values():
         p.stop()
-    os.environ.pop("GROQ_API_KEY", None)
+    os.environ.pop("LLM_API_KEY", None)
 
 
 # Strategy: generate a list of filenames with mixed extensions

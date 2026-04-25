@@ -22,18 +22,23 @@ class RAGModule:
     to provide a unified interface for document processing and retrieval.
     """
 
-    def __init__(self, collection: str, max_history: int = 10) -> None:
+    def __init__(self, collection: str, max_history: int = 10, llm_api_key: str | None = None, llm_base_url: str | None = None, llm_model: str | None = None) -> None:
         """Initialize with a named collection.
 
         Args:
             collection: Name of the ChromaDB collection to create or connect to.
             max_history: Maximum number of conversation history turns to send
                 to the Generator. Defaults to 10. A value of 0 disables history.
+            llm_api_key: API key for the LLM provider. Falls back to LLM_API_KEY
+                env var, then GROQ_API_KEY for backwards compatibility.
+            llm_base_url: Base URL for OpenAI-compatible APIs (e.g. Ollama:
+                `http://localhost:11434/v1`). Falls back to LLM_BASE_URL env var.
+            llm_model: Model identifier. Falls back to LLM_MODEL env var.
 
         Raises:
             ValueError: If collection name is not provided.
             ValueError: If max_history is negative.
-            RuntimeError: If GROQ_API_KEY is not set.
+            RuntimeError: If no API key is found.
         """
         if not collection:
             raise ValueError("Se requiere un nombre de colección.")
@@ -45,17 +50,21 @@ class RAGModule:
         self._max_history = max_history
 
         load_dotenv()
-        api_key = os.getenv("GROQ_API_KEY")
+        api_key = llm_api_key or os.getenv("LLM_API_KEY") or os.getenv("GROQ_API_KEY")
         if not api_key:
             raise RuntimeError(
-                "La variable de entorno GROQ_API_KEY no está configurada. "
-                "Cree un archivo .env con su clave de API de Groq."
+                "No se encontró una clave de API. Configure LLM_API_KEY en el archivo .env."
             )
+        base_url = llm_base_url or os.getenv("LLM_BASE_URL")
+        model_name = llm_model or os.getenv("LLM_MODEL")
 
         self.chunker = Chunker()
         self.embedder = Embedder()
         self.retriever = Retriever(collection_name=collection)
-        self.generator = Generator(api_key=api_key)
+        kwargs = {"api_key": api_key, "base_url": base_url}
+        if model_name:
+            kwargs["model"] = model_name
+        self.generator = Generator(**kwargs)
         self._deleted = False
 
     def _check_deleted(self) -> None:

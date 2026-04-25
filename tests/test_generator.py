@@ -31,8 +31,8 @@ class TestSystemPrompt:
 class TestGeneratorGenerate:
     """Unit tests for Generator.generate method."""
 
-    @patch("rag_core.generator.Groq")
-    def test_generate_returns_answer(self, mock_groq_cls):
+    @patch("rag_core.generator.OpenAI")
+    def test_generate_returns_answer(self, mock_openai_cls):
         """generate() should return the content from the Groq response."""
         mock_message = MagicMock()
         mock_message.content = "Respuesta generada por el modelo."
@@ -45,7 +45,7 @@ class TestGeneratorGenerate:
 
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = mock_response
-        mock_groq_cls.return_value = mock_client
+        mock_openai_cls.return_value = mock_client
 
         gen = Generator(api_key="fake-key")
         chunks = [
@@ -59,14 +59,14 @@ class TestGeneratorGenerate:
         assert result == "Respuesta generada por el modelo."
         mock_client.chat.completions.create.assert_called_once()
 
-    @patch("rag_core.generator.Groq")
-    def test_groq_api_error_raises_runtime_error(self, mock_groq_cls):
+    @patch("rag_core.generator.OpenAI")
+    def test_groq_api_error_raises_runtime_error(self, mock_openai_cls):
         """Groq API failure should propagate as RuntimeError with Spanish message."""
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = Exception(
             "API rate limit exceeded"
         )
-        mock_groq_cls.return_value = mock_client
+        mock_openai_cls.return_value = mock_client
 
         gen = Generator(api_key="fake-key")
         chunks = [
@@ -76,5 +76,5 @@ class TestGeneratorGenerate:
             }
         ]
 
-        with pytest.raises(RuntimeError, match="Error de la API de Groq"):
+        with pytest.raises(RuntimeError, match="Error al llamar al LLM"):
             gen.generate("test query", chunks)

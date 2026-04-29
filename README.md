@@ -36,7 +36,7 @@ monorag/
 
 ```bash
 # Clonar el repositorio
-git clone <url-del-repositorio>
+git clone [<url-del-repositorio>](https://github.com/BryanInfante/monorag.git)
 cd monorag
 
 # Crear entorno virtual

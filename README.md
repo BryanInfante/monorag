@@ -216,4 +216,4 @@ El Generator recibe los últimos N turnos de conversación (configurable via `ma
 
 ## Licencia
 
-Este proyecto no incluye una licencia explícita. Consulta con el autor antes de redistribuir.
+MIT License

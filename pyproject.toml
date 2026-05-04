@@ -14,7 +14,11 @@ dependencies = [
     "pdfplumber==0.11.6",
     "python-dotenv==1.1.0",
     "rich==14.0.0",
+    "fastmcp",
 ]
+
+[project.scripts]
+monorag-mcp = "rag_core.mcp_server:main"
 
 [project.optional-dependencies]
 test = [

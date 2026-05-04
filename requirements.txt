@@ -11,3 +11,7 @@ rich==14.0.0
 # Testing dependencies
 pytest==8.3.5
 hypothesis==6.131.0
+
+# MCP dependencies
+fastmcp
+

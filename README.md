@@ -141,17 +141,17 @@ print(rag.list_collections())
 rag.delete_collection()
 ```
 
-### Historial de conversación
+### Historial de conversaciÃ³n
 
-`RAGModule` mantiene un historial en memoria de las preguntas y respuestas anteriores. Cada llamada a `ask()` envía los últimos N turnos al LLM para que pueda responder preguntas de seguimiento con contexto.
+`RAGModule` mantiene un historial en memoria de las preguntas y respuestas anteriores. Cada llamada a `ask()` envÃ­a los Ãºltimos N turnos al LLM para que pueda responder preguntas de seguimiento con contexto.
 
 ```python
-# Configurar el número máximo de turnos (por defecto 10)
+# Configurar el nÃºmero mÃ¡ximo de turnos (por defecto 10)
 rag = RAGModule(collection="mi_coleccion", max_history=5)
 
-# Cada ask() acumula historial automáticamente
-rag.ask("¿Qué dice el documento sobre seguridad?")
-rag.ask("¿Y sobre los procedimientos de emergencia?")  # El LLM recuerda la pregunta anterior
+# Cada ask() acumula historial automÃ¡ticamente
+rag.ask("Â¿QuÃ© dice el documento sobre seguridad?")
+rag.ask("Â¿Y sobre los procedimientos de emergencia?")  # El LLM recuerda la pregunta anterior
 
 # Limpiar historial para empezar un tema nuevo
 rag.clear_history()
@@ -160,7 +160,54 @@ rag.clear_history()
 rag_sin_historial = RAGModule(collection="otra", max_history=0)
 ```
 
+## Servidor MCP
+
+monorag incluye un servidor MCP (Model Context Protocol) que permite integrar el sistema RAG directamente en clientes compatibles como Claude Desktop, Cursor o Kiro.
+
+### Ejecución
+
+Puedes iniciar el servidor de dos maneras:
+
+1. **Vía script de consola:**
+   ```bash
+   monorag-mcp
+   ```
+
+2. **Vía módulo de Python:**
+   ```bash
+   python -m rag_core.mcp_server
+   ```
+
+### Configuración en el cliente (Claude/Cursor)
+
+Añade monorag a la configuración de tu cliente MCP (usualmente `claude_desktop_config.json` o la sección de configuración de MCP en tu IDE):
+
+```json
+{
+  "mcpServers": {
+    "monorag": {
+      "command": "python",
+      "args": ["-m", "rag_core.mcp_server"]
+    }
+  }
+}
+```
+
+### Herramientas disponibles
+
+| Herramienta | Descripción | Parámetros |
+|-------------|-------------|------------|
+| `search` | Búsqueda semántica | `query`, `collection`, `top_k` |
+| `ask` | Pregunta al LLM | `question`, `collection`, `top_k` |
+| `index_file` | Indexar archivo único | `path`, `collection` |
+| `index_directory` | Indexar directorio | `path`, `collection` |
+| `list_collections` | Listar colecciones | - |
+| `create_collection` | Crear colección | `name` |
+| `delete_collection` | Eliminar colección | `name` |
+| `clear_history` | Limpiar historial | `collection` |
+
 ## API de RAGModule
+
 
 | Método                                          | Descripción                                      |
 |-------------------------------------------------|--------------------------------------------------|

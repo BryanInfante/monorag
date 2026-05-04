@@ -36,7 +36,7 @@ monorag/
 
 ```bash
 # Clonar el repositorio
-git clone <url-del-repositorio>
+git clone https://github.com/BryanInfante/monorag.git
 cd monorag
 
 # Crear entorno virtual
@@ -263,4 +263,4 @@ El Generator recibe los últimos N turnos de conversación (configurable via `ma
 
 ## Licencia
 
-Este proyecto no incluye una licencia explícita. Consulta con el autor antes de redistribuir.
+MIT License

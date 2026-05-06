@@ -101,10 +101,10 @@ class RAGModule:
         if not dir_path.is_dir():
             raise ValueError(f"La ruta no es un directorio: {directory}")
 
-        # Recursively discover .pdf and .txt files
+        # Recursively discover .pdf, .txt, and .md files
         files = sorted(
             p for p in dir_path.rglob("*")
-            if p.is_file() and p.suffix.lower() in (".pdf", ".txt")
+            if p.is_file() and p.suffix.lower() in (".pdf", ".txt", ".md")
         )
 
         total_chunks = 0
@@ -182,10 +182,10 @@ class RAGModule:
         path = Path(file_path)
         if not path.exists():
             raise FileNotFoundError(f"Archivo no encontrado: {file_path}")
-        if path.suffix.lower() not in (".pdf", ".txt"):
+        if path.suffix.lower() not in (".pdf", ".txt", ".md"):
             raise ValueError(
                 f"Tipo de archivo no soportado: {path.suffix}. "
-                "Solo se admiten archivos .pdf y .txt."
+                "Solo se admiten archivos .pdf, .txt y .md."
             )
 
         return self._index_file(path)

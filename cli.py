@@ -181,7 +181,7 @@ def cmd_search(rag: RAGModule, query: str) -> None:
         return
     try:
         with console.status("Buscando fragmentos..."):
-            results = rag.search(query, top_k=5)
+            results = rag.search(query)
         if not results:
             console.print("[yellow]No se encontraron resultados.[/yellow]")
             return

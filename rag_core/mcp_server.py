@@ -385,7 +385,7 @@ def _timeout_error_message(public_operation: str, timeout_seconds: float) -> str
 
 
 @mcp.tool
-def search(query: str, collection: str, top_k: int = 5) -> str:
+def search(query: str, collection: str, top_k: int | None = None) -> str:
     """Search for relevant document fragments in a collection."""
     emit_mcp_breadcrumb("search:start", collection=collection)
     if not query.strip() or not collection.strip():
@@ -400,7 +400,7 @@ def search(query: str, collection: str, top_k: int = 5) -> str:
 
         def run() -> str:
             emit_mcp_breadcrumb("search:before_module_search", collection=collection)
-            results = module.search(query, top_k)
+            results = module.search(query, top_k=top_k)
             emit_mcp_breadcrumb("search:after_module_search", collection=collection)
             response = json.dumps(results, ensure_ascii=False)
             return response
@@ -414,7 +414,7 @@ def search(query: str, collection: str, top_k: int = 5) -> str:
 
 
 @mcp.tool
-def ask(question: str, collection: str, top_k: int = 5) -> str:
+def ask(question: str, collection: str, top_k: int | None = None) -> str:
     """Ask a question and get an LLM-generated answer with source references."""
     if not question.strip() or not collection.strip():
         return "Error: se requieren parámetros 'question' y 'collection' no vacíos."
@@ -424,7 +424,7 @@ def ask(question: str, collection: str, top_k: int = 5) -> str:
         module = _get_or_create(collection)
 
         def run() -> str:
-            answer = module.ask(question, top_k)
+            answer = module.ask(question, top_k=top_k)
             return str(answer)
 
         return _run_with_timeout("tool.ask", timeout, run, collection=collection)

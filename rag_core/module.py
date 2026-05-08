@@ -85,13 +85,17 @@ class RAGModule:
     to provide a unified interface for document processing and retrieval.
     """
 
-    def __init__(self, collection: str, max_history: int = 10, llm_api_key: str | None = None, llm_base_url: str | None = None, llm_model: str | None = None) -> None:
+    def __init__(self, collection: str, max_history: int = 10, chunk_size: int | None = None, chunk_overlap: int | None = None, llm_api_key: str | None = None, llm_base_url: str | None = None, llm_model: str | None = None) -> None:
         """Initialize with a named collection.
 
         Args:
             collection: Name of the ChromaDB collection to create or connect to.
             max_history: Maximum number of conversation history turns to send
                 to the Generator. Defaults to 10. A value of 0 disables history.
+            chunk_size: Maximum number of tokens per chunk. Falls back to
+                MONORAG_CHUNK_SIZE env var, then 500.
+            chunk_overlap: Number of overlapping tokens between consecutive
+                chunks. Falls back to MONORAG_CHUNK_OVERLAP env var, then 50.
             llm_api_key: API key for the LLM provider. Falls back to LLM_API_KEY
                 env var, then GROQ_API_KEY for backwards compatibility.
             llm_base_url: Base URL for OpenAI-compatible APIs (e.g. Ollama:
@@ -122,8 +126,12 @@ class RAGModule:
         base_url = llm_base_url or os.getenv("LLM_BASE_URL")
         model_name = llm_model or os.getenv("LLM_MODEL")
 
+        # Resolve chunk parameters from env vars if not provided explicitly
+        resolved_chunk_size = chunk_size if chunk_size is not None else int(os.getenv("MONORAG_CHUNK_SIZE", "500"))
+        resolved_chunk_overlap = chunk_overlap if chunk_overlap is not None else int(os.getenv("MONORAG_CHUNK_OVERLAP", "50"))
+
         ChunkerClass = _load_chunker_class()
-        self.chunker = ChunkerClass()
+        self.chunker = ChunkerClass(chunk_size=resolved_chunk_size, overlap=resolved_chunk_overlap)
         emit_mcp_breadcrumb("RAGModule:init:before_embedder", collection=collection)
         EmbedderClass = _load_embedder_class()
         self.embedder = EmbedderClass()
@@ -266,12 +274,13 @@ class RAGModule:
 
         return self._index_file(path)
 
-    def search(self, query: str, top_k: int = 5) -> list[dict]:
+    def search(self, query: str, top_k: int | None = None) -> list[dict]:
         """Semantic search over the collection.
 
         Args:
             query: Natural language query string.
-            top_k: Number of results to return (default 5).
+            top_k: Number of results to return. Falls back to MONORAG_TOP_K
+                env var, then 5.
 
         Returns:
             List of dicts with keys: text, metadata (source, page, chunk_index).
@@ -285,21 +294,24 @@ class RAGModule:
         if not query or not query.strip():
             raise ValueError("La consulta debe ser una cadena no vacía.")
 
+        resolved_top_k = top_k if top_k is not None else int(os.getenv("MONORAG_TOP_K", "5"))
+
         emit_mcp_breadcrumb("RAGModule:search:before_embed_query")
         query_embedding = self.embedder.embed_query(query)
         emit_mcp_breadcrumb("RAGModule:search:after_embed_query")
         emit_mcp_breadcrumb("RAGModule:search:before_retriever_query")
-        results = self.retriever.query(query_embedding, top_k=top_k)
+        results = self.retriever.query(query_embedding, top_k=resolved_top_k)
         emit_mcp_breadcrumb("RAGModule:search:after_retriever_query")
         emit_mcp_breadcrumb("RAGModule:search:return")
         return results
 
-    def ask(self, query: str, top_k: int = 5) -> dict:
+    def ask(self, query: str, top_k: int | None = None) -> dict:
         """Ask a question and get an LLM-generated answer with sources.
 
         Args:
             query: Natural language question.
-            top_k: Number of context chunks to use (default 5).
+            top_k: Number of context chunks to use. Falls back to MONORAG_TOP_K
+                env var, then 5.
 
         Returns:
             Dict with keys: answer (str), sources (list of chunk dicts).
@@ -313,7 +325,8 @@ class RAGModule:
         if not query or not query.strip():
             raise ValueError("La consulta debe ser una cadena no vacía.")
 
-        results = self.search(query, top_k=top_k)
+        resolved_top_k = top_k if top_k is not None else int(os.getenv("MONORAG_TOP_K", "5"))
+        results = self.search(query, top_k=resolved_top_k)
 
         # Guard: return predefined message when no relevant documents are found
         if not results:

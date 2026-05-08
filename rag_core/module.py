@@ -300,7 +300,7 @@ class RAGModule:
         query_embedding = self.embedder.embed_query(query)
         emit_mcp_breadcrumb("RAGModule:search:after_embed_query")
         emit_mcp_breadcrumb("RAGModule:search:before_retriever_query")
-        results = self.retriever.query(query_embedding, top_k=resolved_top_k)
+        results = self.retriever.hybrid_query(query, query_embedding, top_k=resolved_top_k)
         emit_mcp_breadcrumb("RAGModule:search:after_retriever_query")
         emit_mcp_breadcrumb("RAGModule:search:return")
         return results

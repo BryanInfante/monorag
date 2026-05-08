@@ -25,7 +25,7 @@ def _load_sentence_transformer_class():
 class Embedder:
     """Generates embeddings using sentence-transformers."""
 
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2", batch_size: int = 256) -> None:
+    def __init__(self, model_name: str = "BAAI/bge-small-en-v1.5", batch_size: int = 256) -> None:
         """Load the sentence-transformers model.
 
         Args:

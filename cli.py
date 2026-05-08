@@ -192,7 +192,7 @@ def cmd_search(rag: RAGModule, query: str) -> None:
                 f"[bold cyan]{i}.[/bold cyan] [dim]{meta['source']}[/dim] "
                 f"— pág. {meta['page']}, fragmento {meta['chunk_index']}"
             )
-            preview = r["text"][:200] + ("..." if len(r["text"]) > 200 else "")
+            preview = r["text"][:500] + ("..." if len(r["text"]) > 500 else "")
             console.print(f"   {preview}\n")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")

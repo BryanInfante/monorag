@@ -5,7 +5,7 @@ Sistema de Recuperación Aumentada por Generación (RAG) para documentos técnic
 ## Stack
 
 - **ChromaDB** — almacenamiento vectorial persistente
-- **sentence-transformers** (`all-MiniLM-L6-v2`) — embeddings
+- **sentence-transformers** (`BAAI/bge-small-en-v1.5`) — embeddings
 - **OpenAI-compatible API** — generación de respuestas (Groq, OpenAI, Ollama, LM Studio, etc.)
 - **pdfplumber** — extracción de texto de PDFs
 - **Rich** — interfaz CLI interactiva

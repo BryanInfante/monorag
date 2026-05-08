@@ -262,16 +262,16 @@ _filename_st = st.tuples(
 class TestRAGModuleFileDiscoveryProperty:
     """Property-based test for file discovery."""
 
-    # Feature: rag-core, Property 6: File discovery returns only PDF and TXT files
+    # Feature: rag-core, Property 6: File discovery returns only supported document files
     @given(
         filenames=st.lists(_filename_st, min_size=1, max_size=30, unique=True),
     )
     @settings(max_examples=100)
-    def test_add_documents_discovers_only_pdf_and_txt(self, filenames):
+    def test_add_documents_discovers_only_pdf_txt_and_md(self, filenames):
         """**Validates: Requirements 2.1**
 
         For any directory tree with mixed file types, add_documents discovers
-        only .pdf and .txt files.
+        only .pdf, .txt, and .md files.
         """
         import tempfile
 
@@ -304,7 +304,9 @@ class TestRAGModuleFileDiscoveryProperty:
                 ]
 
                 expected = sorted(
-                    f for f in filenames if f.endswith(".pdf") or f.endswith(".txt")
+                    f
+                    for f in filenames
+                    if f.endswith(".pdf") or f.endswith(".txt") or f.endswith(".md")
                 )
                 assert sorted(checked_sources) == expected, (
                     f"Expected {expected}, got {sorted(checked_sources)}"

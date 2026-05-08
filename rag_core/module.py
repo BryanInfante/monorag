@@ -6,13 +6,76 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from rag_core.chunker import Chunker
-from rag_core.embedder import Embedder
-from rag_core.generator import Generator
-from rag_core.retriever import Retriever
-from rag_core.utils import extract_pdf, extract_txt
+from rag_core.mcp_diagnostics import emit_mcp_breadcrumb
 
 logger = logging.getLogger(__name__)
+
+# Keep this module cheap to import for MCP startup/get_or_create. These names
+# intentionally exist for tests and monkeypatching, but the heavy implementations
+# are imported lazily at the point of use. Importing ``rag_core.embedder`` pulls
+# sentence-transformers; importing ``rag_core.retriever`` pulls ChromaDB.
+Chunker = None
+Embedder = None
+Generator = None
+Retriever = None
+extract_pdf = None
+extract_txt = None
+
+
+def _load_chunker_class():
+    global Chunker
+    if Chunker is None:
+        emit_mcp_breadcrumb("RAGModule:init:before_import_chunker")
+        from rag_core.chunker import Chunker as _Chunker
+
+        Chunker = _Chunker
+        emit_mcp_breadcrumb("RAGModule:init:after_import_chunker")
+    return Chunker
+
+
+def _load_embedder_class():
+    global Embedder
+    if Embedder is None:
+        emit_mcp_breadcrumb("RAGModule:init:before_import_embedder")
+        from rag_core.embedder import Embedder as _Embedder
+
+        Embedder = _Embedder
+        emit_mcp_breadcrumb("RAGModule:init:after_import_embedder")
+    return Embedder
+
+
+def _load_retriever_class():
+    global Retriever
+    if Retriever is None:
+        emit_mcp_breadcrumb("RAGModule:init:before_import_retriever")
+        from rag_core.retriever import Retriever as _Retriever
+
+        Retriever = _Retriever
+        emit_mcp_breadcrumb("RAGModule:init:after_import_retriever")
+    return Retriever
+
+
+def _load_generator_class():
+    global Generator
+    if Generator is None:
+        emit_mcp_breadcrumb("RAGModule:init:before_import_generator")
+        from rag_core.generator import Generator as _Generator
+
+        Generator = _Generator
+        emit_mcp_breadcrumb("RAGModule:init:after_import_generator")
+    return Generator
+
+
+def _load_extractors():
+    global extract_pdf, extract_txt
+    if extract_pdf is None or extract_txt is None:
+        emit_mcp_breadcrumb("RAGModule:index:before_import_extractors")
+        from rag_core.utils import extract_pdf as _extract_pdf, extract_txt as _extract_txt
+
+        extract_pdf = _extract_pdf
+        extract_txt = _extract_txt
+        emit_mcp_breadcrumb("RAGModule:index:after_import_extractors")
+    return extract_pdf, extract_txt
 
 
 class RAGModule:
@@ -40,6 +103,7 @@ class RAGModule:
             ValueError: If max_history is negative.
             RuntimeError: If no API key is found.
         """
+        emit_mcp_breadcrumb("RAGModule:init:start", collection=collection)
         if not collection:
             raise ValueError("Se requiere un nombre de colección.")
 
@@ -58,14 +122,25 @@ class RAGModule:
         base_url = llm_base_url or os.getenv("LLM_BASE_URL")
         model_name = llm_model or os.getenv("LLM_MODEL")
 
-        self.chunker = Chunker()
-        self.embedder = Embedder()
-        self.retriever = Retriever(collection_name=collection)
+        ChunkerClass = _load_chunker_class()
+        self.chunker = ChunkerClass()
+        emit_mcp_breadcrumb("RAGModule:init:before_embedder", collection=collection)
+        EmbedderClass = _load_embedder_class()
+        self.embedder = EmbedderClass()
+        emit_mcp_breadcrumb("RAGModule:init:after_embedder", collection=collection)
+        emit_mcp_breadcrumb("RAGModule:init:before_retriever", collection=collection)
+        RetrieverClass = _load_retriever_class()
+        self.retriever = RetrieverClass(collection_name=collection)
+        emit_mcp_breadcrumb("RAGModule:init:after_retriever", collection=collection)
         kwargs = {"api_key": api_key, "base_url": base_url}
         if model_name:
             kwargs["model"] = model_name
-        self.generator = Generator(**kwargs)
+        emit_mcp_breadcrumb("RAGModule:init:before_generator", collection=collection)
+        GeneratorClass = _load_generator_class()
+        self.generator = GeneratorClass(**kwargs)
+        emit_mcp_breadcrumb("RAGModule:init:after_generator", collection=collection)
         self._deleted = False
+        emit_mcp_breadcrumb("RAGModule:init:return", collection=collection)
 
     def _check_deleted(self) -> None:
         """Check if the collection has been deleted and raise if so.
@@ -136,11 +211,12 @@ class RAGModule:
             return 0
 
         suffix = file_path.suffix.lower()
+        extract_pdf_func, extract_txt_func = _load_extractors()
         if suffix == ".pdf":
-            pages = extract_pdf(str(file_path))
+            pages = extract_pdf_func(str(file_path))
             chunks = self.chunker.chunk_pages(pages, source=filename)
         else:
-            text = extract_txt(str(file_path))
+            text = extract_txt_func(str(file_path))
             chunks = self.chunker.chunk(text, source=filename)
 
         if not chunks:
@@ -209,8 +285,14 @@ class RAGModule:
         if not query or not query.strip():
             raise ValueError("La consulta debe ser una cadena no vacía.")
 
+        emit_mcp_breadcrumb("RAGModule:search:before_embed_query")
         query_embedding = self.embedder.embed_query(query)
-        return self.retriever.query(query_embedding, top_k=top_k)
+        emit_mcp_breadcrumb("RAGModule:search:after_embed_query")
+        emit_mcp_breadcrumb("RAGModule:search:before_retriever_query")
+        results = self.retriever.query(query_embedding, top_k=top_k)
+        emit_mcp_breadcrumb("RAGModule:search:after_retriever_query")
+        emit_mcp_breadcrumb("RAGModule:search:return")
+        return results
 
     def ask(self, query: str, top_k: int = 5) -> dict:
         """Ask a question and get an LLM-generated answer with sources.

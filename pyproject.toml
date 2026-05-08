@@ -28,3 +28,19 @@ test = [
 
 [tool.setuptools.packages.find]
 include = ["rag_core*"]
+
+[tool.pytest.ini_options]
+norecursedirs = [
+    ".git",
+    ".hypothesis",
+    ".pytest_cache",
+    ".pytest_tmp",
+    ".test-artifacts",
+    ".test-tmp",
+    "__pycache__",
+    "chroma_db",
+    "manual-temp",
+    "monorag.egg-info",
+    "test-tmp",
+    "venv",
+]

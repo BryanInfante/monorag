@@ -107,7 +107,14 @@ class TestExtractTxtProperties:
     """Property-based tests for TXT extraction."""
 
     # Feature: rag-core, Property 5: TXT extraction round-trip preserves content
-    @given(content=st.text(alphabet=st.characters(blacklist_characters="\r")))
+    @given(
+        content=st.text(
+            alphabet=st.characters(
+                blacklist_categories=("Cs",),
+                blacklist_characters="\r",
+            )
+        )
+    )
     @settings(max_examples=100)
     def test_txt_round_trip_preserves_content(self, content):
         """**Validates: Requirements 2.3, 3.2, 9.1, 9.2**

@@ -164,6 +164,8 @@ rag_sin_historial = RAGModule(collection="otra", max_history=0)
 
 monorag incluye un servidor MCP (Model Context Protocol) que permite integrar el sistema RAG directamente en clientes compatibles como Claude Desktop, Cursor o Kiro.
 
+El servidor usa FastMCP sobre STDIO. No abre puertos: el cliente MCP inicia el proceso y se comunica por `stdin/stdout`.
+
 ### Ejecución
 
 Puedes iniciar el servidor de dos maneras:
@@ -193,18 +195,24 @@ Añade monorag a la configuración de tu cliente MCP (usualmente `claude_desktop
 }
 ```
 
+### Rendimiento y carga lazy
+
+`RAGModule` se importa e instancia de forma lazy: el servidor arranca rápido para completar el handshake STDIO y recién carga embeddings/Chroma cuando una herramienta necesita trabajar con una colección.
+
+`list_collections` está optimizada para UI: lee el catálogo `chroma.sqlite3` en modo read-only y no instancia ni `RAGModule` ni `chromadb.PersistentClient`. Esto evita trabajo pesado de Chroma, migraciones, locks o escrituras cuando sólo se necesitan nombres y contadores.
+
 ### Herramientas disponibles
 
-| Herramienta | Descripción | Parámetros |
-|-------------|-------------|------------|
-| `search` | Búsqueda semántica | `query`, `collection`, `top_k` |
-| `ask` | Pregunta al LLM | `question`, `collection`, `top_k` |
-| `index_file` | Indexar archivo único | `path`, `collection` |
-| `index_directory` | Indexar directorio | `path`, `collection` |
-| `list_collections` | Listar colecciones | - |
-| `create_collection` | Crear colección | `name` |
-| `delete_collection` | Eliminar colección | `name` |
-| `clear_history` | Limpiar historial | `collection` |
+| Herramienta | Descripción | Parámetros | Retorno |
+|-------------|-------------|------------|---------|
+| `search` | Búsqueda semántica | `query`, `collection`, `top_k` | JSON con fragmentos y metadata |
+| `ask` | Pregunta al LLM con fuentes | `question`, `collection`, `top_k` | Respuesta generada y fuentes |
+| `index_file` | Indexar archivo único | `path`, `collection` | Mensaje con cantidad de fragmentos añadidos |
+| `index_directory` | Indexar directorio | `path`, `collection` | Mensaje con cantidad de fragmentos añadidos |
+| `list_collections` | Listar colecciones sin cargar Chroma pesado | - | JSON con objetos `{name, count, chunks}` |
+| `create_collection` | Crear colección | `name` | Mensaje de éxito o error |
+| `delete_collection` | Eliminar colección | `name` | Mensaje de éxito o error |
+| `clear_history` | Limpiar historial de una sesión activa | `collection` | Mensaje de éxito o error |
 
 ## API de RAGModule
 

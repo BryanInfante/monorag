@@ -1,9 +1,25 @@
 import logging
 import math
 
-from sentence_transformers import SentenceTransformer
+from rag_core.mcp_diagnostics import emit_mcp_breadcrumb
 
 logger = logging.getLogger(__name__)
+
+# Keep ``rag_core.embedder`` import-light for MCP. Tests patch this module-level
+# name directly, so preserve it and lazily populate it when real runtime code
+# needs the dependency.
+SentenceTransformer = None
+
+
+def _load_sentence_transformer_class():
+    global SentenceTransformer
+    if SentenceTransformer is None:
+        emit_mcp_breadcrumb("Embedder:init:before_import_sentence_transformer")
+        from sentence_transformers import SentenceTransformer as _SentenceTransformer
+
+        SentenceTransformer = _SentenceTransformer
+        emit_mcp_breadcrumb("Embedder:init:after_import_sentence_transformer")
+    return SentenceTransformer
 
 
 class Embedder:
@@ -24,7 +40,16 @@ class Embedder:
             raise ValueError(
                 f"El tamaño de lote debe ser al menos 1, se recibió: {batch_size}"
             )
-        self.model = SentenceTransformer(model_name)
+        emit_mcp_breadcrumb(
+            "Embedder:init:before_sentence_transformer",
+            detail=f"model={model_name}",
+        )
+        SentenceTransformerClass = _load_sentence_transformer_class()
+        self.model = SentenceTransformerClass(model_name)
+        emit_mcp_breadcrumb(
+            "Embedder:init:after_sentence_transformer",
+            detail=f"model={model_name}",
+        )
         self.batch_size = batch_size
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -51,7 +76,9 @@ class Embedder:
             batch = texts[b * self.batch_size : (b + 1) * self.batch_size]
             if total_batches > 1:
                 logger.info("Procesando lote %d de %d", b + 1, total_batches)
+            emit_mcp_breadcrumb("embed:before_encode", detail=f"batch={b + 1}/{total_batches}")
             embeddings = self.model.encode(batch)
+            emit_mcp_breadcrumb("embed:after_encode", detail=f"batch={b + 1}/{total_batches}")
             result.extend([list(map(float, vec)) for vec in embeddings])
 
         return result
@@ -65,5 +92,7 @@ class Embedder:
         Returns:
             Embedding vector as a list of floats.
         """
+        emit_mcp_breadcrumb("embed_query:before_encode")
         embedding = self.model.encode([query])
+        emit_mcp_breadcrumb("embed_query:after_encode")
         return list(map(float, embedding[0]))

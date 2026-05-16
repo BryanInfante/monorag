@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 # Keep MCP STDIO protocol clean before any optional ML dependency can be imported.
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ["MONORAG_MCP_DIAGNOSTICS"] = "1"  # Enable breadcrumbs for MCP transport
 
 # Pre-import sentence_transformers in the main thread to avoid import-lock
 # deadlocks when _get_or_create() runs in a worker thread. This is the heaviest

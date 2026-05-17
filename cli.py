@@ -14,6 +14,7 @@ import os
 import sys
 import warnings
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
 
 # Suppress HuggingFace and tokenizer noise before optional ML dependencies load.
@@ -42,6 +43,8 @@ from rag_core.storage_paths import (
 
 console = Console()
 
+PACKAGE_NAME = "monorag"
+VERSION_FLAGS = ("--version", "-V")
 MISSING_METADATA_VALUE = (None, "", "N/A")
 NON_PAGINATED_SUFFIXES = (".txt", ".md")
 
@@ -609,7 +612,27 @@ def get_prompt(collection_name: str | None) -> str:
     return "[bold cyan]monorag[/bold cyan] > "
 
 
-def main() -> None:
+def get_installed_version() -> str:
+    """Return the installed MonoRAG package version."""
+    try:
+        return package_version(PACKAGE_NAME)
+    except PackageNotFoundError:
+        return "desconocida"
+
+
+def handle_global_args(argv: list[str]) -> bool:
+    """Handle non-interactive CLI flags before opening the REPL."""
+    if len(argv) == 1 and argv[0] in VERSION_FLAGS:
+        console.print(f"{PACKAGE_NAME} {get_installed_version()}")
+        return True
+    return False
+
+
+def main(argv: list[str] | None = None) -> None:
+    resolved_argv = sys.argv[1:] if argv is None else argv
+    if handle_global_args(resolved_argv):
+        return
+
     show_banner()
 
     config = CliConfig()

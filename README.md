@@ -152,18 +152,23 @@ Comandos principales:
 | `list` | Listar colecciones |
 | `clear` | Limpiar la colecci?n activa |
 | `delete` | Eliminar la colecci?n activa |
-| `config` | Ver configuraci?n del CLI |
-| `config chunk <size> <overlap>` | Configurar chunking para nuevas sesiones |
-| `config db path <ruta>` | Usar ChromaDB local en cualquier carpeta |
-| `config db url <url>` | Usar ChromaDB remoto HTTP(S) |
-| `config db default` | Volver al storage por defecto |
-| `config llm` | Abrir asistente guiado para configurar proveedor, base URL, API key y modelo |
-| `config llm default` | Volver a `.env`/defaults para LLM |
+| `config` | Ver configuraci?n del CLI y archivo persistente |
+| `config chunk <size> <overlap>` | Configurar y guardar chunking |
+| `config db path <ruta>` | Usar y guardar ChromaDB local en cualquier carpeta |
+| `config db url <url>` | Usar y guardar ChromaDB remoto HTTP(S) |
+| `config db default` | Volver al storage por defecto y guardar |
+| `config llm` | Abrir asistente guiado, configurar y guardar proveedor, base URL, API key y modelo |
+| `config llm default` | Volver a `.env`/defaults para LLM y guardar |
 
 El flujo recomendado para LLM es `config llm`: el CLI te lleva paso a paso por proveedor, endpoint, clave y modelo. Los shortcuts directos existen para automatizaci?n, pero la UX humana principal es el asistente guiado.
 
-La configuraci?n de `chunk_size` y `chunk_overlap` vive en el CLI o en el c?digo que instancia `RAGModule`; no depende de `.env`.
-La configuraci?n LLM del CLI es de sesi?n: se aplica al crear/usar una colecci?n nueva o al volver a seleccionar la colecci?n.
+La configuraci?n del CLI se guarda en un archivo persistente del usuario:
+
+- **Windows**: `%LOCALAPPDATA%\monorag\config.json`
+- **Linux**: `$XDG_DATA_HOME/monorag/config.json` o `~/.local/share/monorag/config.json`
+- **macOS**: `~/Library/Application Support/monorag/config.json`
+
+Pod?s sobrescribir esa ubicaci?n con `MONORAG_CONFIG_PATH`. Las variables de entorno y `.env` siguen funcionando; `config llm default` limpia los overrides guardados para volver a esos valores.
 
 ## Uso programático
 

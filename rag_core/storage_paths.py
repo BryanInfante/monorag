@@ -45,6 +45,14 @@ def default_chroma_db_path() -> str:
     return str(_default_monorag_data_root() / "chroma_db")
 
 
+def default_config_path() -> str:
+    """Return the default persistent CLI configuration file path."""
+    env_path = os.getenv("MONORAG_CONFIG_PATH")
+    if env_path:
+        return env_path
+    return str(_default_monorag_data_root() / "config.json")
+
+
 def default_chroma_url() -> str | None:
     """Return the configured remote Chroma URL, if any.
 

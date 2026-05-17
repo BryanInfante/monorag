@@ -2,7 +2,15 @@
 
 import builtins
 
-from cli import CliConfig, cmd_config
+import pytest
+
+from cli import CliConfig, cmd_config, load_cli_config
+
+
+@pytest.fixture(autouse=True)
+def _isolated_cli_config(monkeypatch, tmp_path):
+    """Keep persistent CLI config tests away from the real user profile."""
+    monkeypatch.setenv("MONORAG_CONFIG_PATH", str(tmp_path / "config.json"))
 
 
 def _feed_input(monkeypatch, values):
@@ -28,6 +36,12 @@ def test_config_llm_opens_guided_wizard_for_known_provider(monkeypatch):
     assert config.llm_api_key == "gsk-test-key"
     assert config.llm_model == "llama-3.3-70b-versatile"
 
+    persisted = load_cli_config()
+    assert persisted.llm_provider == "groq"
+    assert persisted.llm_base_url is None
+    assert persisted.llm_api_key == "gsk-test-key"
+    assert persisted.llm_model == "llama-3.3-70b-versatile"
+
 
 def test_config_llm_wizard_supports_custom_openai_compatible_provider(monkeypatch):
     """Custom providers should collect provider name, base URL, key, and model."""
@@ -51,8 +65,8 @@ def test_config_llm_wizard_supports_custom_openai_compatible_provider(monkeypatc
     assert config.llm_model == "acme-model"
 
 
-def test_config_llm_default_resets_session_values():
-    """`config llm default` should clear session-level LLM overrides."""
+def test_config_llm_default_resets_persisted_values():
+    """`config llm default` should clear persisted LLM overrides."""
     config = CliConfig(
         llm_provider="groq",
         llm_base_url="https://api.groq.com/openai/v1",
@@ -66,3 +80,21 @@ def test_config_llm_default_resets_session_values():
     assert result.llm_base_url is None
     assert result.llm_model is None
     assert result.llm_api_key is None
+
+    persisted = load_cli_config()
+    assert persisted.llm_provider is None
+    assert persisted.llm_base_url is None
+    assert persisted.llm_model is None
+    assert persisted.llm_api_key is None
+
+
+def test_config_db_path_is_persisted():
+    """Custom DB path should survive a new CLI process."""
+    result = cmd_config(CliConfig(), r"db path C:\monorag-db")
+
+    assert result.db_path == r"C:\monorag-db"
+    assert result.db_url is None
+
+    persisted = load_cli_config()
+    assert persisted.db_path == r"C:\monorag-db"
+    assert persisted.db_url is None

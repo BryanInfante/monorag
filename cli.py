@@ -13,7 +13,8 @@ import logging
 import os
 import sys
 import warnings
-from dataclasses import dataclass
+import json
+from dataclasses import asdict, dataclass
 from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
 
@@ -38,6 +39,7 @@ from rag_core.storage_paths import (
     default_chroma_api_key,
     default_chroma_db_path,
     default_chroma_url,
+    default_config_path,
     parse_chroma_url,
 )
 
@@ -79,6 +81,78 @@ class CliConfig:
     llm_base_url: str | None = None
     llm_model: str | None = None
     llm_api_key: str | None = None
+
+
+PERSISTED_CONFIG_FIELDS = frozenset(CliConfig.__annotations__)
+
+
+def _coerce_optional_string(value) -> str | None:
+    """Normalize persisted nullable string values."""
+    if value in (None, ""):
+        return None
+    return str(value)
+
+
+def _coerce_int(value, default: int) -> int:
+    """Normalize persisted integer values, falling back on invalid data."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def load_cli_config() -> CliConfig:
+    """Load persistent CLI configuration from the user config file."""
+    path = Path(default_config_path())
+    if not path.exists():
+        return CliConfig()
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        console.print(
+            f"[yellow]No se pudo leer la configuración persistente en {path}: {exc}[/yellow]"
+        )
+        return CliConfig()
+
+    if not isinstance(raw, dict):
+        console.print(f"[yellow]Configuración persistente inválida en {path}; se ignora.[/yellow]")
+        return CliConfig()
+
+    defaults = CliConfig()
+    return CliConfig(
+        chunk_size=_coerce_int(raw.get("chunk_size"), defaults.chunk_size),
+        chunk_overlap=_coerce_int(raw.get("chunk_overlap"), defaults.chunk_overlap),
+        db_path=_coerce_optional_string(raw.get("db_path")),
+        db_url=_coerce_optional_string(raw.get("db_url")),
+        llm_provider=_coerce_optional_string(raw.get("llm_provider")),
+        llm_base_url=_coerce_optional_string(raw.get("llm_base_url")),
+        llm_model=_coerce_optional_string(raw.get("llm_model")),
+        llm_api_key=_coerce_optional_string(raw.get("llm_api_key")),
+    )
+
+
+def save_cli_config(config: CliConfig) -> None:
+    """Persist CLI configuration to the user config file."""
+    path = Path(default_config_path())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        key: value
+        for key, value in asdict(config).items()
+        if key in PERSISTED_CONFIG_FIELDS
+    }
+    path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def persist_cli_config_or_warn(config: CliConfig) -> None:
+    """Persist CLI configuration and keep the session alive if saving fails."""
+    try:
+        save_cli_config(config)
+    except OSError as exc:
+        console.print(f"[yellow]Configuración aplicada solo a esta sesión; no se pudo guardar: {exc}[/yellow]")
 
 
 def strip_quotes(s: str) -> str:
@@ -231,7 +305,8 @@ def cmd_config_llm_wizard(config: CliConfig) -> CliConfig:
     config.llm_api_key = api_key
     config.llm_model = model or None
 
-    console.print("[green]Proveedor LLM configurado para esta sesión.[/green]")
+    persist_cli_config_or_warn(config)
+    console.print("[green]Proveedor LLM configurado y guardado.[/green]")
     show_config(config)
     return config
 
@@ -284,12 +359,12 @@ def show_help() -> None:
     table.add_row("list", "Listar todas las colecciones")
     table.add_row("delete", "Eliminar la colección activa")
     table.add_row("config", "Ver configuración actual")
-    table.add_row("config chunk <size> <overlap>", "Configurar chunking para nuevas sesiones")
-    table.add_row("config db path <ruta>", "Usar ChromaDB local en cualquier carpeta")
-    table.add_row("config db url <url>", "Usar ChromaDB remoto por HTTP(S)")
-    table.add_row("config db default", "Volver al storage por defecto")
-    table.add_row("config llm", "Abrir asistente guiado del proveedor LLM")
-    table.add_row("config llm default", "Volver al proveedor LLM definido por .env/default")
+    table.add_row("config chunk <size> <overlap>", "Configurar y guardar chunking")
+    table.add_row("config db path <ruta>", "Usar y guardar ChromaDB local en cualquier carpeta")
+    table.add_row("config db url <url>", "Usar y guardar ChromaDB remoto por HTTP(S)")
+    table.add_row("config db default", "Volver al storage por defecto y guardar")
+    table.add_row("config llm", "Abrir asistente guiado y guardar proveedor LLM")
+    table.add_row("config llm default", "Volver al proveedor LLM definido por .env/default y guardar")
     table.add_row("exit / quit", "Salir del CLI")
     console.print(table)
 
@@ -309,6 +384,7 @@ def show_config(config: CliConfig) -> None:
         "llm_api_key",
         mask_secret(config.llm_api_key or os.getenv("LLM_API_KEY") or os.getenv("GROQ_API_KEY")),
     )
+    table.add_row("config_file", default_config_path())
     console.print(table)
 
 
@@ -338,8 +414,9 @@ def cmd_config(config: CliConfig, args: str) -> CliConfig:
 
         config.chunk_size = chunk_size
         config.chunk_overlap = chunk_overlap
+        persist_cli_config_or_warn(config)
         console.print(
-            "[green]Chunking actualizado. Se aplicará a nuevas colecciones o al volver a usar una colección.[/green]"
+            "[green]Chunking actualizado y guardado. Se aplicará a nuevas colecciones o al volver a usar una colección.[/green]"
         )
         return config
 
@@ -352,7 +429,8 @@ def cmd_config(config: CliConfig, args: str) -> CliConfig:
             config.llm_base_url = None
             config.llm_model = None
             config.llm_api_key = None
-            console.print("[green]Proveedor LLM restaurado al valor de .env/default.[/green]")
+            persist_cli_config_or_warn(config)
+            console.print("[green]Proveedor LLM restaurado al valor de .env/default y guardado.[/green]")
             return config
 
         # Shortcuts avanzados: útiles para scripts/tests, pero el camino humano
@@ -364,22 +442,26 @@ def cmd_config(config: CliConfig, args: str) -> CliConfig:
         value = strip_quotes(" ".join(parts[2:]))
         if parts[1] == "provider":
             config.llm_provider = normalize_provider_name(value)
-            console.print(f"[green]Proveedor LLM configurado: {config.llm_provider}[/green]")
+            persist_cli_config_or_warn(config)
+            console.print(f"[green]Proveedor LLM configurado y guardado: {config.llm_provider}[/green]")
             return config
 
         if parts[1] == "base-url":
             config.llm_base_url = value
-            console.print(f"[green]Endpoint LLM configurado: {value}[/green]")
+            persist_cli_config_or_warn(config)
+            console.print(f"[green]Endpoint LLM configurado y guardado: {value}[/green]")
             return config
 
         if parts[1] == "model":
             config.llm_model = value
-            console.print(f"[green]Modelo LLM configurado: {value}[/green]")
+            persist_cli_config_or_warn(config)
+            console.print(f"[green]Modelo LLM configurado y guardado: {value}[/green]")
             return config
 
         if parts[1] == "api-key":
             config.llm_api_key = value
-            console.print("[green]API key LLM configurada para esta sesión.[/green]")
+            persist_cli_config_or_warn(config)
+            console.print("[green]API key LLM configurada y guardada.[/green]")
             return config
 
     if parts[0] == "db":
@@ -390,7 +472,8 @@ def cmd_config(config: CliConfig, args: str) -> CliConfig:
         if parts[1] == "default":
             config.db_path = None
             config.db_url = None
-            console.print("[green]Storage restaurado al valor por defecto.[/green]")
+            persist_cli_config_or_warn(config)
+            console.print("[green]Storage restaurado al valor por defecto y guardado.[/green]")
             return config
 
         if len(parts) < 3:
@@ -401,7 +484,8 @@ def cmd_config(config: CliConfig, args: str) -> CliConfig:
         if parts[1] == "path":
             config.db_path = value
             config.db_url = None
-            console.print(f"[green]Base local configurada en: {value}[/green]")
+            persist_cli_config_or_warn(config)
+            console.print(f"[green]Base local configurada y guardada en: {value}[/green]")
             return config
 
         if parts[1] == "url":
@@ -412,7 +496,8 @@ def cmd_config(config: CliConfig, args: str) -> CliConfig:
                 return config
             config.db_url = value
             config.db_path = None
-            console.print(f"[green]Base remota configurada en: {value}[/green]")
+            persist_cli_config_or_warn(config)
+            console.print(f"[green]Base remota configurada y guardada en: {value}[/green]")
             return config
 
     console.print("[red]Comando de configuración desconocido. Escribe 'help'.[/red]")
@@ -635,7 +720,7 @@ def main(argv: list[str] | None = None) -> None:
 
     show_banner()
 
-    config = CliConfig()
+    config = load_cli_config()
     collection_name: str | None = None
     rag: RAGModule | None = None
 

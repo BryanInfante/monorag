@@ -24,6 +24,7 @@ def clear_cache(monkeypatch):
     """Reset process-local MCP state between tests."""
     mcp_server._instances.clear()
     mcp_server._load_entries.clear()
+    mcp_server._warmup_error = None
     monkeypatch.delenv("MONORAG_DB_PATH", raising=False)
     monkeypatch.delenv("MONORAG_CHROMA_URL", raising=False)
     monkeypatch.delenv("CHROMA_URL", raising=False)

@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from rag_core.module import RAGModule
 
 T = TypeVar("T")
-DIAGNOSTICS_VERSION = "mcp-server-hang-v2"
+DIAGNOSTICS_VERSION = "mcp-server-single-flight-v3"
 
 _NOISY_LOGGERS = ("sentence_transformers", "transformers", "torch", "huggingface_hub")
 
@@ -117,9 +117,64 @@ class _LoadEntry:
 
 
 _load_entries: dict[str, _LoadEntry] = {}
+_warmup_error: BaseException | None = None  # set if the startup warmup thread fails
+
+# ---------------------------------------------------------------------------
+# MCP server lifespan: warm up sentence_transformers in a real OS thread
+# ---------------------------------------------------------------------------
+# FastMCP runs tool calls in AnyIO worker threads. Importing torch /
+# sentence_transformers for the first time inside such a thread can hang
+# because torch initialises global state (CUDA, multiprocessing) that is
+# unsafe to do from a secondary thread.
+#
+# The fix: kick off the import in a plain threading.Thread at server startup
+# (before AnyIO's thread pool is involved). The single-flight _LoadEntry
+# machinery in _get_or_create ensures that any query arriving while the
+# warmup is still running will wait on the same Event instead of launching
+# a duplicate import.
+
+
+@contextlib.asynccontextmanager
+async def _warmup_lifespan(server: Any):
+    """Import sentence_transformers in a real OS thread at server startup.
+
+    Yields immediately so the MCP handshake completes in ~1 s while the
+    model loads in the background.  The first tool call that needs embeddings
+    will block on the _LoadEntry Event until the warmup thread finishes.
+    """
+    warmup_error: list[BaseException] = []  # mutable container for thread result
+
+    def _do_warmup() -> None:
+        global _warmup_error
+        try:
+            with _stage("warmup.sentence_transformers"):
+                with _suppress_stdout():
+                    from rag_core.embedder import _load_sentence_transformer_class
+                    _load_sentence_transformer_class()
+            _configure_noisy_loggers()
+        except BaseException as exc:  # noqa: BLE001
+            _warmup_error = exc
+            _log_event(
+                "warmup.sentence_transformers.error",
+                detail=str(exc),
+                level=logging.ERROR,
+            )
+
+    warmup_thread = threading.Thread(
+        target=_do_warmup,
+        name="mcp-warmup",
+        daemon=True,
+    )
+    warmup_thread.start()
+    _log_event("warmup.launched", detail="sentence_transformers loading in background")
+    try:
+        yield
+    finally:
+        warmup_thread.join(timeout=5)
+
 
 # MCP server configuration
-mcp = FastMCP("monorag")
+mcp = FastMCP("monorag", lifespan=_warmup_lifespan)
 _instances: dict[str, "RAGModule"] = {}
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -398,18 +453,24 @@ def _get_or_create(collection: str) -> "RAGModule":
     """Get a cached RAGModule instance or create and cache a new one.
 
     Single-flight guarantee: if a load is already in progress for ``collection``,
-    the caller waits for that load to finish and reuses its result.  A timed-out
-    or failed load transitions the entry to FAILED so subsequent callers receive
-    a clear error instead of silently launching a second loader.
+    the caller waits for that load to finish and reuses its result.  A failed
+    load cleans up its entry so a subsequent call can retry from a clean slate.
 
-    RAGModule is imported lazily so the MCP server can complete the stdio
-    handshake quickly. Loading sentence-transformers/torch belongs to the first
-    tool call that needs embeddings, not to server startup.
+    sentence_transformers is pre-imported by the warmup thread launched in
+    _warmup_lifespan, so by the time the first tool call reaches here the heavy
+    import is already in sys.modules and _create_rag_module runs without hanging.
     """
     # Fast path: already READY (no lock needed for a dict read in CPython).
     instance = _instances.get(collection)
     if instance is not None:
         return instance
+
+    # If the startup warmup failed, refuse to attempt the import in an AnyIO
+    # worker thread — it would hang.  Surface the original error instead.
+    if _warmup_error is not None:
+        raise RuntimeError(
+            f"El servidor no pudo inicializar sentence_transformers al arrancar: {_warmup_error}"
+        ) from _warmup_error
 
     with _instances_lock:
         # Re-check under lock in case another thread just finished loading.
@@ -644,12 +705,11 @@ def create_collection(name: str) -> str:
     """Create a new collection and cache its RAGModule instance."""
     if not name.strip():
         return "Error: se requiere el parámetro 'name' no vacío."
-    timeout = _load_timeout_seconds()
     try:
-        _run_with_timeout("tool.create_collection", timeout, lambda: _get_or_create(name), collection=name)
+        _get_or_create(name)
         return f"Colección '{name}' creada correctamente."
     except MCPOperationTimeout:
-        return _timeout_error_message("create_collection", timeout)
+        return _timeout_error_message("create_collection", _load_timeout_seconds())
     except Exception as e:
         logger.error("Error en create_collection: %s", e)
         return f"Error al crear la colección: {e}"

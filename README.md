@@ -35,7 +35,7 @@ git clone https://github.com/BryanInfante/monorag.git
 cd monorag
 python -m venv venv
 venv\Scripts\activate  # Windows
-pip install -r requirements.txt
+pip install -r requirements.lock
 ```
 
 En Linux/macOS:

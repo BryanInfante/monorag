@@ -68,6 +68,96 @@ class TestRAGModuleInit:
             with pytest.raises(RuntimeError, match="LLM_API_KEY"):
                 RAGModule("test-col")
 
+    def test_custom_generator_does_not_require_llm_api_key(self, monkeypatch):
+        """Provider-agnostic mode: injected generators bypass built-in API key validation."""
+        monkeypatch.delenv("LLM_API_KEY", raising=False)
+        monkeypatch.delenv("GROQ_API_KEY", raising=False)
+        custom_generator = MagicMock()
+        with patch("rag_core.module.load_dotenv"), \
+             patch("rag_core.module.Embedder"), \
+             patch("rag_core.module.Retriever"):
+            module = RAGModule("test-col", generator=custom_generator)
+
+        assert module.generator is custom_generator
+
+    def test_llm_provider_config_is_passed_to_generator(self, monkeypatch):
+        """RAGModule should pass provider/base_url/model config to the bundled generator."""
+        monkeypatch.setenv("LLM_API_KEY", "fake-key")
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("LLM_BASE_URL", "http://localhost:11434/v1")
+        monkeypatch.setenv("LLM_MODEL", "llama3.2")
+        with patch("rag_core.module.load_dotenv"), \
+             patch("rag_core.module.Embedder"), \
+             patch("rag_core.module.Retriever"), \
+             patch("rag_core.module.Generator") as mock_generator_cls:
+            RAGModule("test-col")
+
+        mock_generator_cls.assert_called_once_with(
+            api_key="fake-key",
+            base_url="http://localhost:11434/v1",
+            provider_name="ollama",
+            model="llama3.2",
+        )
+
+    def test_legacy_groq_api_key_selects_groq_provider(self, monkeypatch):
+        """Deprecated GROQ_API_KEY fallback should still target Groq by default."""
+        monkeypatch.delenv("LLM_API_KEY", raising=False)
+        monkeypatch.delenv("LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("LLM_BASE_URL", raising=False)
+        monkeypatch.delenv("LLM_MODEL", raising=False)
+        monkeypatch.setenv("GROQ_API_KEY", "legacy-groq-key")
+        with patch("rag_core.module.load_dotenv"), \
+             patch("rag_core.module.Embedder"), \
+             patch("rag_core.module.Retriever"), \
+             patch("rag_core.module.Generator") as mock_generator_cls:
+            RAGModule("test-col")
+
+        mock_generator_cls.assert_called_once_with(
+            api_key="legacy-groq-key",
+            base_url=None,
+            provider_name="groq",
+        )
+
+    def test_custom_retriever_and_chunk_params_are_used(self, monkeypatch):
+        """Storage-agnostic mode: injected retrievers bypass the bundled Chroma adapter."""
+        monkeypatch.setenv("LLM_API_KEY", "fake-key")
+        custom_retriever = MagicMock()
+        with patch("rag_core.module.load_dotenv"), \
+             patch("rag_core.module.Embedder"), \
+             patch("rag_core.module.Retriever") as mock_retriever_cls, \
+             patch("rag_core.module.Chunker") as mock_chunker_cls, \
+             patch("rag_core.module.Generator"):
+            module = RAGModule(
+                "test-col",
+                chunk_size=320,
+                chunk_overlap=32,
+                retriever=custom_retriever,
+            )
+
+        mock_chunker_cls.assert_called_once_with(chunk_size=320, overlap=32)
+        mock_retriever_cls.assert_not_called()
+        assert module.retriever is custom_retriever
+
+    @pytest.mark.parametrize(
+        ("chunk_size", "chunk_overlap", "message"),
+        [
+            (0, 0, "chunk_size"),
+            (10, -1, "chunk_overlap"),
+            (10, 10, "menor que chunk_size"),
+        ],
+    )
+    def test_invalid_chunk_parameters_raise_value_error(
+        self, monkeypatch, chunk_size, chunk_overlap, message
+    ):
+        """Chunk configuration is explicit constructor/CLI state, not .env parsing."""
+        monkeypatch.setenv("LLM_API_KEY", "fake-key")
+        with patch("rag_core.module.load_dotenv"), \
+             patch("rag_core.module.Embedder"), \
+             patch("rag_core.module.Retriever"), \
+             patch("rag_core.module.Generator"):
+            with pytest.raises(ValueError, match=message):
+                RAGModule("test-col", chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+
 
 class TestRAGModuleAddDocuments:
     """Tests for add_documents error handling."""

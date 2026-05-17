@@ -3,11 +3,11 @@
 Validates: Requirements 5.3, 5.5
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from rag_core.generator import SYSTEM_PROMPT, Generator
+from rag_core.generator import SYSTEM_PROMPT, Generator, _format_source_reference
 
 
 class TestSystemPrompt:
@@ -16,7 +16,7 @@ class TestSystemPrompt:
     def test_system_prompt_is_in_spanish(self):
         """SYSTEM_PROMPT should contain expected Spanish instructions."""
         assert "Responde" in SYSTEM_PROMPT
-        assert "español" in SYSTEM_PROMPT
+        assert "espa\u00f1ol" in SYSTEM_PROMPT
         assert "contexto" in SYSTEM_PROMPT
 
     def test_system_prompt_mentions_normative_documents(self):
@@ -31,23 +31,12 @@ class TestSystemPrompt:
 class TestGeneratorGenerate:
     """Unit tests for Generator.generate method."""
 
-    @patch("rag_core.generator.OpenAI")
-    def test_generate_returns_answer(self, mock_openai_cls):
-        """generate() should return the content from the Groq response."""
-        mock_message = MagicMock()
-        mock_message.content = "Respuesta generada por el modelo."
+    def test_generate_returns_answer_from_injected_provider(self):
+        """generate() should return the content from any injected provider."""
+        provider = MagicMock()
+        provider.complete.return_value = "Respuesta generada por el modelo."
 
-        mock_choice = MagicMock()
-        mock_choice.message = mock_message
-
-        mock_response = MagicMock()
-        mock_response.choices = [mock_choice]
-
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = mock_response
-        mock_openai_cls.return_value = mock_client
-
-        gen = Generator(api_key="fake-key")
+        gen = Generator(api_key="fake-key", model="test-model", provider=provider)
         chunks = [
             {
                 "text": "Some context text.",
@@ -57,18 +46,21 @@ class TestGeneratorGenerate:
         result = gen.generate("What is this?", chunks)
 
         assert result == "Respuesta generada por el modelo."
-        mock_client.chat.completions.create.assert_called_once()
+        provider.complete.assert_called_once()
+        kwargs = provider.complete.call_args.kwargs
+        assert kwargs["model"] == "test-model"
+        messages = kwargs["messages"]
+        assert messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
+        assert messages[-1]["role"] == "user"
+        assert "Contexto:" in messages[-1]["content"]
+        assert "fuente: doc.pdf, p\u00e1gina: 1" in messages[-1]["content"]
 
-    @patch("rag_core.generator.OpenAI")
-    def test_groq_api_error_raises_runtime_error(self, mock_openai_cls):
-        """Groq API failure should propagate as RuntimeError with Spanish message."""
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.side_effect = Exception(
-            "API rate limit exceeded"
-        )
-        mock_openai_cls.return_value = mock_client
+    def test_provider_error_raises_runtime_error(self):
+        """Provider failures should propagate as RuntimeError with Spanish message."""
+        provider = MagicMock()
+        provider.complete.side_effect = Exception("API rate limit exceeded")
 
-        gen = Generator(api_key="fake-key")
+        gen = Generator(api_key="fake-key", provider=provider)
         chunks = [
             {
                 "text": "Context.",
@@ -78,3 +70,26 @@ class TestGeneratorGenerate:
 
         with pytest.raises(RuntimeError, match="Error al llamar al LLM"):
             gen.generate("test query", chunks)
+
+    def test_provider_alias_sets_default_model(self):
+        """Provider aliases should select a sensible default model."""
+        provider = MagicMock()
+        provider.complete.return_value = "ok"
+
+        gen = Generator(api_key="fake-key", provider_name="groq", provider=provider)
+        gen.generate("pregunta", [])
+
+        assert provider.complete.call_args.kwargs["model"] == "llama-3.3-70b-versatile"
+
+
+class TestSourceFormatting:
+    """Unit tests for human-friendly source references."""
+
+    def test_txt_with_page_zero_omits_fake_page(self):
+        """TXT/MD sources should not display page 0 as if it were a real page."""
+        assert _format_source_reference({"source": "archivo.txt", "page": 0}) == "fuente: archivo.txt"
+        assert _format_source_reference({"source": "notas.md", "page": 0}) == "fuente: notas.md"
+
+    def test_pdf_keeps_real_page_numbers(self):
+        """Paginated formats should preserve the page label."""
+        assert _format_source_reference({"source": "manual.pdf", "page": 3}) == "fuente: manual.pdf, página: 3"

@@ -86,7 +86,7 @@ class Chunker:
 
         return chunks
 
-    def chunk(self, text: str, source: str, start_page: int = 0) -> list[dict]:
+    def chunk(self, text: str, source: str, start_page: int | None = None) -> list[dict]:
         """Split text into chunks with metadata using paragraph-aware splitting.
 
         Splits text on paragraph boundaries (double newlines), accumulates
@@ -98,10 +98,13 @@ class Chunker:
         Args:
             text: The text to chunk.
             source: Source filename for metadata.
-            start_page: Page number for metadata (0 for TXT).
+            start_page: Optional page number for metadata. Use this for
+                paginated sources; leave as ``None`` for TXT/MD.
 
         Returns:
-            List of dicts with keys: text, metadata (source, page, chunk_index).
+            List of dicts with keys: text, metadata. Metadata always contains
+            ``source`` and ``chunk_index`` and only includes ``page`` when a
+            real page number is provided.
         """
         if not text or not text.strip():
             return []
@@ -132,13 +135,16 @@ class Chunker:
 
             prev_tokens = final_tokens
 
+            metadata = {
+                "source": source,
+                "chunk_index": i,
+            }
+            if start_page is not None:
+                metadata["page"] = start_page
+
             chunks.append({
                 "text": final_text,
-                "metadata": {
-                    "source": source,
-                    "page": start_page,
-                    "chunk_index": i,
-                },
+                "metadata": metadata,
             })
 
         return chunks

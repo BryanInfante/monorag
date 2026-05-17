@@ -209,7 +209,7 @@ class TestIndexingPipelineIntegration:
 
         for result in results:
             assert result["metadata"]["source"] == "sample.txt"
-            assert result["metadata"]["page"] == 0
+            assert "page" not in result["metadata"]
             assert isinstance(result["metadata"]["chunk_index"], int)
 
 
@@ -254,9 +254,9 @@ class TestSearchPipelineIntegration:
             assert len(result["text"]) > 0
             meta = result["metadata"]
             assert "source" in meta
-            assert "page" in meta
             assert "chunk_index" in meta
             assert meta["source"] in ("alpha.txt", "beta.txt")
+            assert "page" not in meta
 
 
 # ---------------------------------------------------------------------------
@@ -297,8 +297,8 @@ class TestAskPipelineIntegration:
             assert "metadata" in source
             meta = source["metadata"]
             assert meta["source"] == "knowledge.txt"
-            assert "page" in meta
             assert "chunk_index" in meta
+            assert "page" not in meta
 
         # Verify generator was called with the query and context chunks
         mock_generator.generate.assert_called_once()

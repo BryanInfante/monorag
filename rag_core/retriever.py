@@ -1,7 +1,16 @@
+from pathlib import Path
+
 import chromadb
 from rank_bm25 import BM25Okapi
 from rag_core.mcp_diagnostics import emit_mcp_breadcrumb
-from rag_core.storage_paths import default_chroma_db_path
+from rag_core.storage_paths import (
+    default_chroma_api_key,
+    default_chroma_database,
+    default_chroma_db_path,
+    default_chroma_tenant,
+    default_chroma_url,
+    parse_chroma_url,
+)
 
 
 class Retriever:
@@ -11,28 +20,96 @@ class Retriever:
     BM25 keyword matching via Reciprocal Rank Fusion (RRF).
     """
 
-    def __init__(self, collection_name: str, persist_dir: str | None = None) -> None:
-        """Initialize ChromaDB PersistentClient and get or create collection.
+    def __init__(
+        self,
+        collection_name: str,
+        persist_dir: str | None = None,
+        *,
+        remote_url: str | None = None,
+        api_key: str | None = None,
+        tenant: str | None = None,
+        database: str | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        """Initialize a ChromaDB client and get or create a collection.
 
         Args:
             collection_name: Name of the collection.
             persist_dir: Path to ChromaDB persistence directory. When omitted,
                 defaults to ``MONORAG_DB_PATH`` or the project ``chroma_db``.
+            remote_url: Optional HTTP(S) URL for a remote Chroma server. Falls
+                back to ``MONORAG_CHROMA_URL`` or ``CHROMA_URL``.
+            api_key: Optional API key for hosted/remote Chroma. Falls back to
+                ``MONORAG_CHROMA_API_KEY`` or ``CHROMA_API_KEY``.
+            tenant: Optional hosted Chroma tenant.
+            database: Optional hosted Chroma database.
+            headers: Optional explicit HTTP headers for remote Chroma.
         """
-        if persist_dir is None:
-            persist_dir = default_chroma_db_path()
+        remote_url = remote_url or default_chroma_url()
+        api_key = api_key or default_chroma_api_key()
+        tenant = tenant or default_chroma_tenant()
+        database = database or default_chroma_database()
 
-        emit_mcp_breadcrumb(
-            "Retriever:init:before_persistent_client",
-            collection=collection_name,
-            detail=f"path={persist_dir}",
-        )
-        self._client = chromadb.PersistentClient(path=persist_dir)
-        emit_mcp_breadcrumb(
-            "Retriever:init:after_persistent_client",
-            collection=collection_name,
-            detail=f"path={persist_dir}",
-        )
+        if remote_url:
+            host, port, ssl = parse_chroma_url(remote_url)
+            client_headers = dict(headers or {})
+            if api_key and "Authorization" not in client_headers:
+                client_headers["Authorization"] = f"Bearer {api_key}"
+
+            emit_mcp_breadcrumb(
+                "Retriever:init:before_http_client",
+                collection=collection_name,
+                detail=f"url={remote_url}",
+            )
+            client_kwargs = {
+                "host": host,
+                "port": port,
+                "ssl": ssl,
+                "headers": client_headers or None,
+            }
+            if tenant:
+                client_kwargs["tenant"] = tenant
+            if database:
+                client_kwargs["database"] = database
+            self._client = chromadb.HttpClient(**client_kwargs)
+            emit_mcp_breadcrumb(
+                "Retriever:init:after_http_client",
+                collection=collection_name,
+                detail=f"url={remote_url}",
+            )
+        elif api_key and tenant and database and hasattr(chromadb, "CloudClient"):
+            emit_mcp_breadcrumb(
+                "Retriever:init:before_cloud_client",
+                collection=collection_name,
+                detail=f"tenant={tenant} database={database}",
+            )
+            self._client = chromadb.CloudClient(
+                tenant=tenant,
+                database=database,
+                api_key=api_key,
+            )
+            emit_mcp_breadcrumb(
+                "Retriever:init:after_cloud_client",
+                collection=collection_name,
+                detail=f"tenant={tenant} database={database}",
+            )
+        else:
+            if persist_dir is None:
+                persist_dir = default_chroma_db_path()
+            Path(persist_dir).mkdir(parents=True, exist_ok=True)
+
+            emit_mcp_breadcrumb(
+                "Retriever:init:before_persistent_client",
+                collection=collection_name,
+                detail=f"path={persist_dir}",
+            )
+            self._client = chromadb.PersistentClient(path=persist_dir)
+            emit_mcp_breadcrumb(
+                "Retriever:init:after_persistent_client",
+                collection=collection_name,
+                detail=f"path={persist_dir}",
+            )
+
         self._collection_name = collection_name
         emit_mcp_breadcrumb(
             "Retriever:init:before_get_or_create_collection",
@@ -48,24 +125,39 @@ class Retriever:
 
         # Build BM25 index from existing documents in the collection
         self._bm25_corpus: list[str] = []
+        self._bm25_ids: list[str] = []
         self._bm25_index: BM25Okapi | None = None
         self._rebuild_bm25()
 
     def _rebuild_bm25(self) -> None:
         """Rebuild the in-memory BM25 index from all documents in the collection."""
-        count = self._collection.count()
+        try:
+            count = int(self._collection.count())
+        except (TypeError, ValueError):
+            count = 0
+
         if count == 0:
             self._bm25_corpus = []
+            self._bm25_ids = []
             self._bm25_index = None
             return
 
         # Fetch all documents from ChromaDB
         all_docs = self._collection.get(include=["documents"])
-        self._bm25_corpus = all_docs["documents"] or []
-        self._bm25_ids = all_docs["ids"] or []
+        documents = all_docs.get("documents", []) if isinstance(all_docs, dict) else []
+        ids = all_docs.get("ids", []) if isinstance(all_docs, dict) else []
+        self._bm25_corpus = documents or []
+        self._bm25_ids = ids or []
+
+        if not self._bm25_corpus:
+            self._bm25_index = None
+            return
 
         # Tokenize for BM25 (simple whitespace + lowercase)
         tokenized = [doc.lower().split() for doc in self._bm25_corpus]
+        if not tokenized or all(len(tokens) == 0 for tokens in tokenized):
+            self._bm25_index = None
+            return
         self._bm25_index = BM25Okapi(tokenized)
 
     def add(

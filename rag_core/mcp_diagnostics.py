@@ -15,9 +15,6 @@ import logging
 import os
 import sys
 
-_DIAGNOSTICS_ENABLED = os.getenv("MONORAG_MCP_DIAGNOSTICS", "0") == "1"
-
-
 class _DynamicStderrHandler(logging.StreamHandler):
     """Logging handler that follows the current sys.stderr capture target."""
 
@@ -29,7 +26,23 @@ class _DynamicStderrHandler(logging.StreamHandler):
 logger = logging.getLogger("rag_core.mcp_diagnostics")
 logger.propagate = False
 
-if _DIAGNOSTICS_ENABLED:
+
+def _diagnostics_enabled() -> bool:
+    """Return whether MCP breadcrumbs should be emitted right now.
+
+    Tests and embedding/retrieval modules may import this module before the MCP
+    server sets ``MONORAG_MCP_DIAGNOSTICS=1``. Checking dynamically keeps the
+    module import-light while still allowing MCP to enable breadcrumbs later.
+    """
+    return os.getenv("MONORAG_MCP_DIAGNOSTICS", "0") == "1"
+
+
+def _ensure_configured() -> bool:
+    """Configure the diagnostics logger if breadcrumbs are enabled."""
+    if not _diagnostics_enabled():
+        logger.setLevel(logging.CRITICAL + 1)
+        return False
+
     logger.setLevel(logging.INFO)
     if not logger.handlers:
         handler = _DynamicStderrHandler()
@@ -40,8 +53,10 @@ if _DIAGNOSTICS_ENABLED:
             )
         )
         logger.addHandler(handler)
-else:
-    logger.setLevel(logging.CRITICAL + 1)  # Effectively disabled
+    return True
+
+
+_ensure_configured()
 
 
 def emit_mcp_breadcrumb(
@@ -51,6 +66,8 @@ def emit_mcp_breadcrumb(
     detail: str | None = None,
 ) -> None:
     """Emit an exact MCP diagnostic breadcrumb to stderr."""
+    if not _ensure_configured():
+        return
     parts = [event]
     if collection is not None:
         parts.append(f"collection={collection}")

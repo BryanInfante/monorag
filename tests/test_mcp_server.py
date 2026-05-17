@@ -24,6 +24,14 @@ def clear_cache(monkeypatch):
     """Reset process-local MCP state between tests."""
     mcp_server._instances.clear()
     monkeypatch.delenv("MONORAG_DB_PATH", raising=False)
+    monkeypatch.delenv("MONORAG_CHROMA_URL", raising=False)
+    monkeypatch.delenv("CHROMA_URL", raising=False)
+    monkeypatch.delenv("MONORAG_CHROMA_API_KEY", raising=False)
+    monkeypatch.delenv("CHROMA_API_KEY", raising=False)
+    monkeypatch.delenv("MONORAG_CHROMA_TENANT", raising=False)
+    monkeypatch.delenv("CHROMA_TENANT", raising=False)
+    monkeypatch.delenv("MONORAG_CHROMA_DATABASE", raising=False)
+    monkeypatch.delenv("CHROMA_DATABASE", raising=False)
 
 
 @pytest.fixture
@@ -121,6 +129,33 @@ def test_rag_module_import_does_not_load_heavy_embedding_or_chroma_modules():
     }
 
 
+def test_mcp_server_import_does_not_load_heavy_runtime_modules():
+    script = (
+        "import json, sys; "
+        "import rag_core.mcp_server; "
+        "print(json.dumps({"
+        "'sentence_transformers': 'sentence_transformers' in sys.modules, "
+        "'chromadb': 'chromadb' in sys.modules, "
+        "'openai': 'openai' in sys.modules"
+        "}))"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=10,
+    )
+
+    assert json.loads(result.stdout) == {
+        "sentence_transformers": False,
+        "chromadb": False,
+        "openai": False,
+    }
+
+
 def test_mcp_safe_environment_is_configured():
     assert os.environ["TOKENIZERS_PARALLELISM"] == "false"
     for logger_name in (
@@ -132,10 +167,11 @@ def test_mcp_safe_environment_is_configured():
         assert logging.getLogger(logger_name).level == logging.ERROR
 
 
-def test_default_chroma_path_is_project_root_when_env_missing(monkeypatch):
+def test_default_chroma_path_uses_localappdata_on_windows(monkeypatch):
     monkeypatch.delenv("MONORAG_DB_PATH", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\tester\AppData\Local")
 
-    expected = str(Path(__file__).resolve().parents[1] / "chroma_db")
+    expected = r"C:\Users\tester\AppData\Local\monorag\chroma_db"
 
     assert default_chroma_db_path() == expected
 
@@ -317,14 +353,37 @@ def test_retriever_emits_exact_persistent_client_and_query_breadcrumbs(capsys):
         assert breadcrumb in captured.err
 
 
-def test_retriever_uses_project_chroma_path_by_default(monkeypatch):
+def test_retriever_uses_user_data_chroma_path_by_default(monkeypatch):
     monkeypatch.delenv("MONORAG_DB_PATH", raising=False)
-    expected = str(Path(__file__).resolve().parents[1] / "chroma_db")
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\tester\AppData\Local")
+    expected = r"C:\Users\tester\AppData\Local\monorag\chroma_db"
 
-    with patch("rag_core.retriever.chromadb.PersistentClient") as mock_client_cls:
+    with patch("rag_core.retriever.Path.mkdir") as mock_mkdir, patch(
+        "rag_core.retriever.chromadb.PersistentClient"
+    ) as mock_client_cls:
         Retriever(collection_name="manuales")
 
+    mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
     mock_client_cls.assert_called_once_with(path=expected)
+
+
+def test_retriever_uses_http_client_for_remote_chroma_url(monkeypatch):
+    monkeypatch.setenv("MONORAG_CHROMA_URL", "https://chroma.example.com")
+    monkeypatch.setenv("MONORAG_CHROMA_API_KEY", "secret")
+
+    with patch("rag_core.retriever.chromadb.HttpClient") as mock_client_cls:
+        collection = MagicMock()
+        collection.count.return_value = 0
+        mock_client_cls.return_value.get_or_create_collection.return_value = collection
+
+        Retriever(collection_name="manuales")
+
+    mock_client_cls.assert_called_once_with(
+        host="chroma.example.com",
+        port=443,
+        ssl=True,
+        headers={"Authorization": "Bearer secret"},
+    )
 
 
 def test_search_success(mock_rag_module):

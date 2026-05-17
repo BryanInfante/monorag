@@ -3,6 +3,7 @@
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -85,27 +86,71 @@ class RAGModule:
     to provide a unified interface for document processing and retrieval.
     """
 
-    def __init__(self, collection: str, max_history: int = 10, chunk_size: int | None = None, chunk_overlap: int | None = None, llm_api_key: str | None = None, llm_base_url: str | None = None, llm_model: str | None = None) -> None:
+    def __init__(
+        self,
+        collection: str,
+        max_history: int = 10,
+        chunk_size: int = 500,
+        chunk_overlap: int = 50,
+        llm_api_key: str | None = None,
+        llm_base_url: str | None = None,
+        llm_model: str | None = None,
+        llm_provider: str | None = None,
+        db_path: str | None = None,
+        db_url: str | None = None,
+        db_api_key: str | None = None,
+        db_tenant: str | None = None,
+        db_database: str | None = None,
+        generator: Any | None = None,
+        retriever: Any | None = None,
+        embedder: Any | None = None,
+        chunker: Any | None = None,
+    ) -> None:
         """Initialize with a named collection.
 
         Args:
-            collection: Name of the ChromaDB collection to create or connect to.
+            collection: Name of the collection to create or connect to.
             max_history: Maximum number of conversation history turns to send
                 to the Generator. Defaults to 10. A value of 0 disables history.
-            chunk_size: Maximum number of tokens per chunk. Falls back to
-                MONORAG_CHUNK_SIZE env var, then 500.
+            chunk_size: Maximum number of tokens per chunk. Configure this from
+                callers such as the CLI, not from ``.env``.
             chunk_overlap: Number of overlapping tokens between consecutive
-                chunks. Falls back to MONORAG_CHUNK_OVERLAP env var, then 50.
+                chunks. Configure this from callers such as the CLI, not from
+                ``.env``.
             llm_api_key: API key for the LLM provider. Falls back to LLM_API_KEY
                 env var, then GROQ_API_KEY for backwards compatibility.
             llm_base_url: Base URL for OpenAI-compatible APIs (e.g. Ollama:
                 `http://localhost:11434/v1`). Falls back to LLM_BASE_URL env var.
             llm_model: Model identifier. Falls back to LLM_MODEL env var.
+            llm_provider: Built-in LLM provider alias. Falls back to
+                LLM_PROVIDER env var. Examples: ``openai``, ``groq``,
+                ``google-ai-studio``, ``ollama``, ``lm-studio``. Non-compatible
+                providers can be passed through a custom ``generator``.
+            db_path: Optional local ChromaDB persistence directory. When omitted,
+                the bundled Chroma adapter uses ``MONORAG_DB_PATH`` or the
+                project ``chroma_db`` folder.
+            db_url: Optional remote Chroma HTTP(S) URL. When omitted, the bundled
+                adapter checks ``MONORAG_CHROMA_URL``/``CHROMA_URL``.
+            db_api_key: Optional API key for remote/hosted Chroma deployments.
+            db_tenant: Optional Chroma tenant for hosted deployments.
+            db_database: Optional Chroma database for hosted deployments.
+            generator: Optional custom generator object implementing
+                ``generate(query, context_chunks, history=None)``. Passing this
+                makes RAGModule independent from any built-in LLM provider.
+            retriever: Optional custom retriever object implementing the
+                retriever methods used by RAGModule. Passing this makes RAGModule
+                independent from ChromaDB.
+            embedder: Optional custom embedder object implementing ``embed`` and
+                ``embed_query``.
+            chunker: Optional custom chunker object implementing ``chunk`` and
+                ``chunk_pages``.
 
         Raises:
             ValueError: If collection name is not provided.
             ValueError: If max_history is negative.
-            RuntimeError: If no API key is found.
+            ValueError: If chunk parameters are invalid.
+            RuntimeError: If no API key is found and no custom generator is
+                provided.
         """
         emit_mcp_breadcrumb("RAGModule:init:start", collection=collection)
         if not collection:
@@ -113,40 +158,77 @@ class RAGModule:
 
         if max_history < 0:
             raise ValueError("max_history debe ser mayor o igual a 0.")
+        if chunk_size < 1:
+            raise ValueError("chunk_size debe ser mayor o igual a 1.")
+        if chunk_overlap < 0:
+            raise ValueError("chunk_overlap debe ser mayor o igual a 0.")
+        if chunk_overlap >= chunk_size:
+            raise ValueError("chunk_overlap debe ser menor que chunk_size.")
 
         self._history: list[dict] = []
         self._max_history = max_history
 
         load_dotenv()
-        api_key = llm_api_key or os.getenv("LLM_API_KEY") or os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "No se encontró una clave de API. Configure LLM_API_KEY en el archivo .env."
+
+        if chunker is None:
+            ChunkerClass = _load_chunker_class()
+            self.chunker = ChunkerClass(chunk_size=chunk_size, overlap=chunk_overlap)
+        else:
+            self.chunker = chunker
+
+        if embedder is None:
+            emit_mcp_breadcrumb("RAGModule:init:before_embedder", collection=collection)
+            EmbedderClass = _load_embedder_class()
+            self.embedder = EmbedderClass()
+            emit_mcp_breadcrumb("RAGModule:init:after_embedder", collection=collection)
+        else:
+            self.embedder = embedder
+
+        if retriever is None:
+            emit_mcp_breadcrumb("RAGModule:init:before_retriever", collection=collection)
+            RetrieverClass = _load_retriever_class()
+            self.retriever = RetrieverClass(
+                collection_name=collection,
+                persist_dir=db_path,
+                remote_url=db_url,
+                api_key=db_api_key,
+                tenant=db_tenant,
+                database=db_database,
             )
-        base_url = llm_base_url or os.getenv("LLM_BASE_URL")
-        model_name = llm_model or os.getenv("LLM_MODEL")
+            emit_mcp_breadcrumb("RAGModule:init:after_retriever", collection=collection)
+        else:
+            self.retriever = retriever
 
-        # Resolve chunk parameters from env vars if not provided explicitly
-        resolved_chunk_size = chunk_size if chunk_size is not None else int(os.getenv("MONORAG_CHUNK_SIZE", "500"))
-        resolved_chunk_overlap = chunk_overlap if chunk_overlap is not None else int(os.getenv("MONORAG_CHUNK_OVERLAP", "50"))
+        if generator is None:
+            provider_name = llm_provider or os.getenv("LLM_PROVIDER")
+            api_key = llm_api_key or os.getenv("LLM_API_KEY")
+            if not api_key:
+                legacy_groq_api_key = os.getenv("GROQ_API_KEY")
+                if legacy_groq_api_key:
+                    api_key = legacy_groq_api_key
+                    provider_name = provider_name or "groq"
+            if not api_key:
+                raise RuntimeError(
+                    "No se encontró una clave de API. Configure LLM_API_KEY en el archivo .env "
+                    "o inyecte un generator personalizado."
+                )
+            base_url = llm_base_url or os.getenv("LLM_BASE_URL")
+            model_name = llm_model or os.getenv("LLM_MODEL")
 
-        ChunkerClass = _load_chunker_class()
-        self.chunker = ChunkerClass(chunk_size=resolved_chunk_size, overlap=resolved_chunk_overlap)
-        emit_mcp_breadcrumb("RAGModule:init:before_embedder", collection=collection)
-        EmbedderClass = _load_embedder_class()
-        self.embedder = EmbedderClass()
-        emit_mcp_breadcrumb("RAGModule:init:after_embedder", collection=collection)
-        emit_mcp_breadcrumb("RAGModule:init:before_retriever", collection=collection)
-        RetrieverClass = _load_retriever_class()
-        self.retriever = RetrieverClass(collection_name=collection)
-        emit_mcp_breadcrumb("RAGModule:init:after_retriever", collection=collection)
-        kwargs = {"api_key": api_key, "base_url": base_url}
-        if model_name:
-            kwargs["model"] = model_name
-        emit_mcp_breadcrumb("RAGModule:init:before_generator", collection=collection)
-        GeneratorClass = _load_generator_class()
-        self.generator = GeneratorClass(**kwargs)
-        emit_mcp_breadcrumb("RAGModule:init:after_generator", collection=collection)
+            kwargs = {
+                "api_key": api_key,
+                "base_url": base_url,
+                "provider_name": provider_name,
+            }
+            if model_name:
+                kwargs["model"] = model_name
+            emit_mcp_breadcrumb("RAGModule:init:before_generator", collection=collection)
+            GeneratorClass = _load_generator_class()
+            self.generator = GeneratorClass(**kwargs)
+            emit_mcp_breadcrumb("RAGModule:init:after_generator", collection=collection)
+        else:
+            self.generator = generator
+
         self._deleted = False
         emit_mcp_breadcrumb("RAGModule:init:return", collection=collection)
 
@@ -225,7 +307,7 @@ class RAGModule:
             chunks = self.chunker.chunk_pages(pages, source=filename)
         else:
             text = extract_txt_func(str(file_path))
-            chunks = self.chunker.chunk(text, source=filename)
+            chunks = self.chunker.chunk(text, source=filename, start_page=None)
 
         if not chunks:
             return 0
@@ -300,7 +382,10 @@ class RAGModule:
         query_embedding = self.embedder.embed_query(query)
         emit_mcp_breadcrumb("RAGModule:search:after_embed_query")
         emit_mcp_breadcrumb("RAGModule:search:before_retriever_query")
-        results = self.retriever.hybrid_query(query, query_embedding, top_k=resolved_top_k)
+        if callable(getattr(type(self.retriever), "hybrid_query", None)):
+            results = self.retriever.hybrid_query(query, query_embedding, top_k=resolved_top_k)
+        else:
+            results = self.retriever.query(query_embedding, top_k=resolved_top_k)
         emit_mcp_breadcrumb("RAGModule:search:after_retriever_query")
         emit_mcp_breadcrumb("RAGModule:search:return")
         return results
@@ -317,7 +402,7 @@ class RAGModule:
             Dict with keys: answer (str), sources (list of chunk dicts).
 
         Raises:
-            RuntimeError: If collection is deleted or Groq API call fails.
+            RuntimeError: If collection is deleted or the LLM provider call fails.
             ValueError: If query is empty.
         """
         self._check_deleted()

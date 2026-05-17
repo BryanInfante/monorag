@@ -56,8 +56,8 @@ class TestChunkerUnit:
         for i, chunk in enumerate(result):
             assert chunk["metadata"]["chunk_index"] == i
 
-    def test_chunk_metadata_contains_required_keys(self):
-        """Every chunk must have source, page, and chunk_index in metadata."""
+    def test_chunk_metadata_contains_required_keys_for_paginated_sources(self):
+        """Paginated chunks must keep source, page, and chunk_index metadata."""
         chunker = Chunker()
         text = " ".join(f"w{i}" for i in range(100))
         result = chunker.chunk(text, source="meta.txt", start_page=3)
@@ -70,11 +70,11 @@ class TestChunkerUnit:
             assert meta["source"] == "meta.txt"
             assert meta["page"] == 3
 
-    def test_default_page_is_zero_for_txt(self):
-        """Default start_page should be 0 (used for TXT files)."""
+    def test_txt_metadata_omits_fake_page_by_default(self):
+        """TXT/MD chunks should not invent a fake page number."""
         chunker = Chunker()
         result = chunker.chunk("hello world", source="file.txt")
-        assert result[0]["metadata"]["page"] == 0
+        assert "page" not in result[0]["metadata"]
 
     def test_chunk_pages_preserves_page_numbers(self):
         """chunk_pages should assign each chunk the page of its first token."""
@@ -168,7 +168,8 @@ class TestChunkerProperties:
         """**Validates: Requirements 2.5**
 
         For any text and source filename, every chunk has metadata with
-        `source`, `page` (>=0), and sequential `chunk_index`.
+        `source` and sequential `chunk_index`. `page` is optional for
+        non-paginated formats.
         """
         text = " ".join(words)
         chunker = Chunker()
@@ -178,12 +179,10 @@ class TestChunkerProperties:
         for i, chunk in enumerate(chunks):
             meta = chunk["metadata"]
             assert "source" in meta, "Missing 'source' in metadata"
-            assert "page" in meta, "Missing 'page' in metadata"
             assert "chunk_index" in meta, "Missing 'chunk_index' in metadata"
             assert meta["source"] == source, (
                 f"Expected source '{source}', got '{meta['source']}'"
             )
-            assert meta["page"] >= 0, f"Page must be >= 0, got {meta['page']}"
             assert meta["chunk_index"] == i, (
                 f"Expected chunk_index {i}, got {meta['chunk_index']}"
             )
@@ -306,7 +305,7 @@ class TestSmartChunkingEdgeCases:
 
     # 12. Requirement 7.5
     def test_output_dict_format(self):
-        """Output has {"text": str, "metadata": {"source": str, "page": int, "chunk_index": int}}."""
+        """Output has text plus metadata with source and chunk_index; page is optional."""
         chunker = Chunker(chunk_size=50, overlap=0)
         result = chunker.chunk("hello world", source="t.txt")
 
@@ -315,5 +314,5 @@ class TestSmartChunkingEdgeCases:
         assert isinstance(chunk["text"], str)
         meta = chunk["metadata"]
         assert isinstance(meta["source"], str)
-        assert isinstance(meta["page"], int)
         assert isinstance(meta["chunk_index"], int)
+        assert "page" not in meta

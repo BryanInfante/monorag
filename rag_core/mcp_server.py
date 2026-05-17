@@ -13,17 +13,14 @@ from typing import TYPE_CHECKING, Any, Callable, TypeVar
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ["MONORAG_MCP_DIAGNOSTICS"] = "1"  # Enable breadcrumbs for MCP transport
 
-# Pre-import sentence_transformers in the main thread to avoid import-lock
-# deadlocks when _get_or_create() runs in a worker thread. This is the heaviest
-# import (~10-30s) but must happen in the main thread where the import lock is free.
-import warnings as _warnings
-_warnings.filterwarnings("ignore")
-with contextlib.redirect_stdout(open(os.devnull, "w")):
-    import sentence_transformers  # noqa: F401
-
 from fastmcp import FastMCP
 from rag_core.mcp_diagnostics import emit_mcp_breadcrumb
-from rag_core.storage_paths import default_chroma_db_path
+from rag_core.storage_paths import (
+    default_chroma_api_key,
+    default_chroma_db_path,
+    default_chroma_url,
+    parse_chroma_url,
+)
 
 if TYPE_CHECKING:
     from rag_core.module import RAGModule
@@ -333,6 +330,7 @@ def _instrument_rag_module(instance: "RAGModule", collection: str) -> None:
         _wrap_method(attrs["embedder"], "embed", "embed", collection, suppress_stdout=True)
     if "retriever" in attrs:
         _wrap_method(attrs["retriever"], "query", "retriever.query", collection)
+        _wrap_method(attrs["retriever"], "hybrid_query", "retriever.hybrid_query", collection)
     if "generator" in attrs:
         _wrap_method(attrs["generator"], "generate", "ask.generate", collection)
 
@@ -391,19 +389,22 @@ def search(query: str, collection: str, top_k: int | None = None) -> str:
     emit_mcp_breadcrumb("search:start", collection=collection)
     if not query.strip() or not collection.strip():
         return "Error: se requieren parámetros 'query' y 'collection' no vacíos."
+    resolved_top_k = 5 if top_k is None else top_k
     timeout = _search_timeout_seconds()
     try:
-        # Ensure model is loaded before applying the search timeout.
-        # _get_or_create has its own (longer) timeout for first-time model loading.
+        # _get_or_create has its own timeout for first-time lazy model loading.
         emit_mcp_breadcrumb("search:before_get_or_create", collection=collection)
         module = _get_or_create(collection)
         emit_mcp_breadcrumb("search:after_get_or_create", collection=collection)
 
         def run() -> str:
             emit_mcp_breadcrumb("search:before_module_search", collection=collection)
-            results = module.search(query, top_k=top_k)
+            results = module.search(query, resolved_top_k)
             emit_mcp_breadcrumb("search:after_module_search", collection=collection)
+            emit_mcp_breadcrumb("search:before_json_dumps", collection=collection)
             response = json.dumps(results, ensure_ascii=False)
+            emit_mcp_breadcrumb("search:after_json_dumps", collection=collection)
+            emit_mcp_breadcrumb("search:return", collection=collection)
             return response
 
         return _run_with_timeout("tool.search", timeout, run, collection=collection)
@@ -419,13 +420,13 @@ def ask(question: str, collection: str, top_k: int | None = None) -> str:
     """Ask a question and get an LLM-generated answer with source references."""
     if not question.strip() or not collection.strip():
         return "Error: se requieren parámetros 'question' y 'collection' no vacíos."
+    resolved_top_k = 5 if top_k is None else top_k
     timeout = _ask_timeout_seconds()
     try:
-        # Ensure model is loaded before applying the ask timeout.
         module = _get_or_create(collection)
 
         def run() -> str:
-            answer = module.ask(question, top_k=top_k)
+            answer = module.ask(question, resolved_top_k)
             return str(answer)
 
         return _run_with_timeout("tool.ask", timeout, run, collection=collection)
@@ -496,6 +497,23 @@ def list_collections() -> str:
         import sqlite3
         from pathlib import Path
 
+        remote_url = default_chroma_url()
+        if remote_url:
+            import chromadb
+
+            host, port, ssl = parse_chroma_url(remote_url)
+            api_key = default_chroma_api_key()
+            headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
+            client = chromadb.HttpClient(host=host, port=port, ssl=ssl, headers=headers)
+            collections = client.list_collections()
+            return json.dumps(
+                [
+                    {"name": col.name if hasattr(col, "name") else str(col)}
+                    for col in collections
+                ],
+                ensure_ascii=False,
+            )
+
         db_dir = Path(default_chroma_db_path())
         sqlite_path = db_dir / "chroma.sqlite3"
         if not sqlite_path.exists():
@@ -563,8 +581,15 @@ def delete_collection(name: str) -> str:
         else:
             import chromadb
 
-            path = default_chroma_db_path()
-            client = chromadb.PersistentClient(path=path)
+            remote_url = default_chroma_url()
+            if remote_url:
+                host, port, ssl = parse_chroma_url(remote_url)
+                api_key = default_chroma_api_key()
+                headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
+                client = chromadb.HttpClient(host=host, port=port, ssl=ssl, headers=headers)
+            else:
+                path = default_chroma_db_path()
+                client = chromadb.PersistentClient(path=path)
             client.delete_collection(name=name)
         return f"Colección '{name}' eliminada correctamente."
     except Exception as e:

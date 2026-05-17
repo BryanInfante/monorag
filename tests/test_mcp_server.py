@@ -23,6 +23,7 @@ from rag_core.storage_paths import default_chroma_db_path
 def clear_cache(monkeypatch):
     """Reset process-local MCP state between tests."""
     mcp_server._instances.clear()
+    mcp_server._load_entries.clear()
     monkeypatch.delenv("MONORAG_DB_PATH", raising=False)
     monkeypatch.delenv("MONORAG_CHROMA_URL", raising=False)
     monkeypatch.delenv("CHROMA_URL", raising=False)
@@ -590,6 +591,7 @@ def test_exception_containment_property(
     method_name, tool, kwargs, message
 ):
     mcp_server._instances.clear()
+    mcp_server._load_entries.clear()
     with patch("rag_core.module.RAGModule") as mock_cls:
         instance = MagicMock()
         mock_cls.return_value = instance
@@ -640,3 +642,175 @@ def test_clear_history_requires_active_session_property(name):
         assert "no existe una sesión activa" in result
         assert name not in mcp_server._instances
         mock_cls.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Concurrency: single-flight guarantee for _get_or_create
+# ---------------------------------------------------------------------------
+
+def test_get_or_create_single_flight_concurrent_calls_create_only_one_instance():
+    """Two simultaneous calls to _get_or_create must produce exactly one RAGModule.
+
+    The race condition: _get_or_create holds _instances_lock while it *dispatches*
+    the worker thread, but the heavy work (RAGModule.__init__) runs *inside* the
+    daemon thread, outside the lock.  A second caller that arrives while the first
+    worker is still running will find _instances empty, acquire the lock, and
+    launch its own worker — creating a second RAGModule and a zombie thread.
+
+    The fix (single-flight) must ensure that the second caller waits for the
+    in-progress load and reuses its result instead of starting a new one.
+    """
+    import threading
+
+    call_count = 0
+    # Gate that holds the first RAGModule.__init__ open until the second
+    # _get_or_create call has had a chance to start.
+    init_started = threading.Event()
+    init_proceed = threading.Event()
+
+    class SlowRAGModule:
+        def __init__(self, collection):
+            nonlocal call_count
+            call_count += 1
+            init_started.set()       # signal: init is running
+            init_proceed.wait(timeout=3)  # hold until test releases it
+            self.collection = collection
+
+    results = [None, None]
+    errors = [None, None]
+
+    def worker(idx):
+        try:
+            results[idx] = mcp_server._get_or_create("concurrent_col")
+        except Exception as exc:
+            errors[idx] = exc
+
+    with patch("rag_core.module.RAGModule", SlowRAGModule):
+        t1 = threading.Thread(target=worker, args=(0,))
+        t1.start()
+
+        # Wait until the first init is in progress, then launch the second caller.
+        init_started.wait(timeout=3)
+        t2 = threading.Thread(target=worker, args=(1,))
+        t2.start()
+
+        # Let the slow init finish.
+        init_proceed.set()
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+
+    assert errors == [None, None], f"Unexpected errors: {errors}"
+    # Single-flight: constructor must have been called exactly once.
+    assert call_count == 1, (
+        f"RAGModule.__init__ was called {call_count} times; expected 1. "
+        "Two concurrent _get_or_create calls created duplicate loaders."
+    )
+    # Both callers must receive the same instance.
+    assert results[0] is not None
+    assert results[0] is results[1]
+
+
+def test_get_or_create_timeout_then_retry_does_not_launch_second_loader():
+    """A failed _get_or_create cleans up its entry so a retry can succeed.
+
+    With the old design, a timed-out daemon worker left _instances empty while
+    a zombie thread kept running — a second call would launch yet another loader
+    on top of the still-running zombie.
+
+    With the single-flight design, _get_or_create runs synchronously in the
+    caller's thread (the tool layer applies the timeout via _run_with_timeout).
+    On failure the entry is removed from _load_entries, so a retry gets a clean
+    slate and can succeed — no zombie threads, no duplicate loaders.
+    """
+    import threading
+
+    call_count = 0
+    first_init_started = threading.Event()
+    first_init_proceed = threading.Event()
+
+    class SlowRAGModule:
+        def __init__(self, collection):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                first_init_started.set()
+                first_init_proceed.wait(timeout=5)
+                raise RuntimeError("simulated load failure")
+            self.collection = collection
+
+    with patch("rag_core.module.RAGModule", SlowRAGModule):
+        # First call: starts loading, then fails.
+        def _load_and_swallow():
+            try:
+                mcp_server._get_or_create("retry_col")
+            except RuntimeError:
+                pass  # expected: simulated load failure
+
+        t1 = threading.Thread(target=_load_and_swallow, daemon=True)
+        t1.start()
+        first_init_started.wait(timeout=3)
+        first_init_proceed.set()  # trigger the failure
+        t1.join(timeout=3)
+
+        # After failure, _load_entries must be clean (no zombie entry).
+        assert "retry_col" not in mcp_server._load_entries, (
+            "Failed load left a stale entry in _load_entries — "
+            "a retry would block forever waiting on a dead Event."
+        )
+
+        # Second call: must succeed (clean slate, no zombie).
+        result = mcp_server._get_or_create("retry_col")
+
+    assert call_count == 2  # first failed, second succeeded
+    assert result is not None
+    assert result.collection == "retry_col"
+
+
+
+# ---------------------------------------------------------------------------
+# Smoke: MCP cold-start + first search must not hang
+# ---------------------------------------------------------------------------
+
+def test_mcp_cold_start_import_and_first_search_do_not_hang():
+    """MCP server cold-start: import + first search must complete without hanging.
+
+    This is the end-to-end regression test for the production bug where
+    sentence_transformers was imported inside a daemon thread with a timeout,
+    causing the first search to hang indefinitely.
+
+    The test runs in a subprocess to simulate a real cold-start.  It patches
+    RAGModule so no real ML models are loaded, keeping the test fast.
+    """
+    script = """
+import sys
+import json
+from unittest.mock import MagicMock, patch
+
+import rag_core.mcp_server as mcp_server
+
+mock_instance = MagicMock()
+mock_instance.search.return_value = [{"text": "resultado", "metadata": {"source": "doc.pdf"}}]
+
+with patch("rag_core.module.RAGModule", return_value=mock_instance):
+    result = mcp_server.search(query="test query", collection="smoke_col")
+
+parsed = json.loads(result)
+assert len(parsed) == 1
+assert parsed[0]["text"] == "resultado"
+print("OK")
+"""
+
+    proc = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        capture_output=True,
+        timeout=15,
+    )
+
+    assert proc.returncode == 0, (
+        f"MCP cold-start smoke test failed.\n"
+        f"stdout: {proc.stdout}\n"
+        f"stderr: {proc.stderr}"
+    )
+    assert "OK" in proc.stdout

@@ -75,6 +75,49 @@ _stdout_state = threading.local()
 _stdout_proxy_lock = threading.Lock()
 _instances_lock = threading.RLock()
 
+# ---------------------------------------------------------------------------
+# Single-flight registry for _get_or_create
+# ---------------------------------------------------------------------------
+# Each entry tracks the load state for one collection so that concurrent
+# callers never launch a second RAGModule loader for the same collection.
+#
+# States:
+#   LOADING  – a worker thread is running; other callers wait on the Event.
+#   READY    – instance is available; callers read it directly.
+#   FAILED   – the load failed; callers receive the stored exception.
+#
+# The entry is created (LOADING) under _instances_lock, so only one thread
+# ever transitions a collection from "absent" to LOADING.
+
+_LOADING = "LOADING"
+_READY = "READY"
+_FAILED = "FAILED"
+
+
+class _LoadEntry:
+    """State machine for a single collection load."""
+
+    __slots__ = ("state", "event", "instance", "error")
+
+    def __init__(self) -> None:
+        self.state: str = _LOADING
+        self.event: threading.Event = threading.Event()
+        self.instance: "RAGModule | None" = None
+        self.error: BaseException | None = None
+
+    def set_ready(self, instance: "RAGModule") -> None:
+        self.instance = instance
+        self.state = _READY
+        self.event.set()
+
+    def set_failed(self, error: BaseException) -> None:
+        self.error = error
+        self.state = _FAILED
+        self.event.set()
+
+
+_load_entries: dict[str, _LoadEntry] = {}
+
 # MCP server configuration
 mcp = FastMCP("monorag")
 _instances: dict[str, "RAGModule"] = {}
@@ -354,25 +397,68 @@ def _create_rag_module(collection: str) -> "RAGModule":
 def _get_or_create(collection: str) -> "RAGModule":
     """Get a cached RAGModule instance or create and cache a new one.
 
+    Single-flight guarantee: if a load is already in progress for ``collection``,
+    the caller waits for that load to finish and reuses its result.  A timed-out
+    or failed load transitions the entry to FAILED so subsequent callers receive
+    a clear error instead of silently launching a second loader.
+
     RAGModule is imported lazily so the MCP server can complete the stdio
     handshake quickly. Loading sentence-transformers/torch belongs to the first
     tool call that needs embeddings, not to server startup.
     """
-    if collection in _instances:
-        return _instances[collection]
+    # Fast path: already READY (no lock needed for a dict read in CPython).
+    instance = _instances.get(collection)
+    if instance is not None:
+        return instance
 
     with _instances_lock:
-        if collection in _instances:
-            return _instances[collection]
-        instance = _run_with_timeout(
-            "get_or_create",
-            _load_timeout_seconds(),
-            lambda: _create_rag_module(collection),
-            collection=collection,
-        )
-        _instrument_rag_module(instance, collection)
-        _instances[collection] = instance
-        return instance
+        # Re-check under lock in case another thread just finished loading.
+        instance = _instances.get(collection)
+        if instance is not None:
+            return instance
+
+        entry = _load_entries.get(collection)
+        if entry is None:
+            # This thread wins the race — create the entry and start loading.
+            entry = _LoadEntry()
+            _load_entries[collection] = entry
+            should_load = True
+        else:
+            should_load = False
+
+    _log_event("get_or_create.start", collection=collection)
+
+    if should_load:
+        # We own this load.  Run it synchronously in the current thread so the
+        # caller's timeout (from _run_with_timeout at the tool layer) applies
+        # naturally.  No nested daemon thread needed here.
+        try:
+            new_instance = _create_rag_module(collection)
+            _instrument_rag_module(new_instance, collection)
+            with _instances_lock:
+                _instances[collection] = new_instance
+            entry.set_ready(new_instance)
+            _log_event("get_or_create.end", collection=collection)
+            return new_instance
+        except BaseException as exc:
+            with _instances_lock:
+                _load_entries.pop(collection, None)
+                _instances.pop(collection, None)
+            entry.set_failed(exc)
+            _log_event("get_or_create.error", collection=collection, detail=str(exc), level=logging.ERROR)
+            raise
+
+    # Another thread is loading (or has finished).  Wait for it.
+    timeout = _load_timeout_seconds()
+    signalled = entry.event.wait(timeout=timeout)
+    if not signalled:
+        raise MCPOperationTimeout("get_or_create", timeout)
+
+    if entry.state == _READY:
+        return entry.instance  # type: ignore[return-value]
+
+    # FAILED — re-raise the original exception so the caller gets a real error.
+    raise entry.error  # type: ignore[misc]
 
 
 def _timeout_error_message(public_operation: str, timeout_seconds: float) -> str:

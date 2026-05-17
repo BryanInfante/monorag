@@ -119,6 +119,10 @@ class _LoadEntry:
 _load_entries: dict[str, _LoadEntry] = {}
 _warmup_error: BaseException | None = None  # set if the startup warmup thread fails
 
+# Sentinel key used by the warmup thread in _load_entries so that _get_or_create
+# can wait for the import to finish before attempting to load any collection.
+_WARMUP_KEY = "__warmup__"
+
 # ---------------------------------------------------------------------------
 # MCP server lifespan: warm up sentence_transformers in a real OS thread
 # ---------------------------------------------------------------------------
@@ -138,11 +142,12 @@ _warmup_error: BaseException | None = None  # set if the startup warmup thread f
 async def _warmup_lifespan(server: Any):
     """Import sentence_transformers in a real OS thread at server startup.
 
-    Yields immediately so the MCP handshake completes in ~1 s while the
-    model loads in the background.  The first tool call that needs embeddings
-    will block on the _LoadEntry Event until the warmup thread finishes.
+    Registers a _LoadEntry under _WARMUP_KEY so that _get_or_create blocks on
+    the same Event instead of attempting the import in an AnyIO worker thread.
+    Yields immediately so the MCP handshake completes while the model loads.
     """
-    warmup_error: list[BaseException] = []  # mutable container for thread result
+    entry = _LoadEntry()
+    _load_entries[_WARMUP_KEY] = entry
 
     def _do_warmup() -> None:
         global _warmup_error
@@ -152,8 +157,10 @@ async def _warmup_lifespan(server: Any):
                     from rag_core.embedder import _load_sentence_transformer_class
                     _load_sentence_transformer_class()
             _configure_noisy_loggers()
+            entry.set_ready(None)  # type: ignore[arg-type]
         except BaseException as exc:  # noqa: BLE001
             _warmup_error = exc
+            entry.set_failed(exc)
             _log_event(
                 "warmup.sentence_transformers.error",
                 detail=str(exc),
@@ -456,10 +463,31 @@ def _get_or_create(collection: str) -> "RAGModule":
     the caller waits for that load to finish and reuses its result.  A failed
     load cleans up its entry so a subsequent call can retry from a clean slate.
 
-    sentence_transformers is pre-imported by the warmup thread launched in
-    _warmup_lifespan, so by the time the first tool call reaches here the heavy
-    import is already in sys.modules and _create_rag_module runs without hanging.
+    Blocks on the warmup _LoadEntry Event if sentence_transformers is still
+    being imported in the background thread, preventing the AnyIO worker from
+    attempting the same import concurrently (which would hang).
     """
+    # Wait for the warmup thread to finish importing sentence_transformers before
+    # attempting anything else.  This is the critical gate: the AnyIO worker
+    # blocks here on the Event instead of racing to do the import itself.
+    warmup_entry = _load_entries.get(_WARMUP_KEY)
+    if warmup_entry is not None and not warmup_entry.event.is_set():
+        timeout = _load_timeout_seconds()
+        _log_event("get_or_create.waiting_for_warmup", collection=collection)
+        if not warmup_entry.event.wait(timeout=timeout):
+            raise MCPOperationTimeout("warmup.sentence_transformers", timeout)
+        if warmup_entry.state == _FAILED:
+            raise RuntimeError(
+                f"El servidor no pudo inicializar sentence_transformers al arrancar: {warmup_entry.error}"
+            ) from warmup_entry.error
+
+    # If the startup warmup failed, refuse to attempt the import in an AnyIO
+    # worker thread — it would hang.  Surface the original error instead.
+    if _warmup_error is not None:
+        raise RuntimeError(
+            f"El servidor no pudo inicializar sentence_transformers al arrancar: {_warmup_error}"
+        ) from _warmup_error
+
     # Fast path: already READY (no lock needed for a dict read in CPython).
     instance = _instances.get(collection)
     if instance is not None:

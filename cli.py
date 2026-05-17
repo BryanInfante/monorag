@@ -42,6 +42,9 @@ from rag_core.storage_paths import (
 
 console = Console()
 
+MISSING_METADATA_VALUE = (None, "", "N/A")
+NON_PAGINATED_SUFFIXES = (".txt", ".md")
+
 LLM_PROVIDER_MENU = [
     ("openai", "OpenAI oficial"),
     ("groq", "Groq"),
@@ -87,6 +90,34 @@ def mask_secret(value: str | None) -> str:
     if len(value) <= 8:
         return "********"
     return f"{value[:4]}...{value[-4:]}"
+
+
+def format_source_reference(metadata: dict, *, include_chunk: bool = False) -> str:
+    """Format source metadata for CLI output without assuming page exists.
+
+    TXT/MD documents are not paginated, so their chunks intentionally omit the
+    ``page`` key. The CLI must treat page metadata as optional instead of
+    crashing while printing sources.
+    """
+    source = metadata.get("source", "desconocido")
+    details: list[str] = []
+
+    page = metadata.get("page")
+    has_fake_text_page = (
+        isinstance(source, str)
+        and source.lower().endswith(NON_PAGINATED_SUFFIXES)
+        and page in (0, "0")
+    )
+    if page not in MISSING_METADATA_VALUE and not has_fake_text_page:
+        details.append(f"pág. {page}")
+
+    chunk_index = metadata.get("chunk_index")
+    if include_chunk and chunk_index not in MISSING_METADATA_VALUE:
+        details.append(f"fragmento {chunk_index}")
+
+    if details:
+        return f"[dim]{source}[/dim] — {', '.join(details)}"
+    return f"[dim]{source}[/dim]"
 
 
 def prompt_text(label: str, default: str | None = None) -> str:
@@ -451,7 +482,7 @@ def cmd_ask(rag: RAGModule, query: str) -> None:
             console.print("\n[bold]Fuentes:[/bold]")
             for i, src in enumerate(result["sources"], 1):
                 meta = src["metadata"]
-                console.print(f"  {i}. [dim]{meta['source']}[/dim] — pág. {meta['page']}")
+                console.print(f"  {i}. {format_source_reference(meta)}")
         console.print()
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -495,8 +526,8 @@ def cmd_search(rag: RAGModule, query: str) -> None:
         for i, r in enumerate(results, 1):
             meta = r["metadata"]
             console.print(
-                f"[bold cyan]{i}.[/bold cyan] [dim]{meta['source']}[/dim] "
-                f"— pág. {meta['page']}, fragmento {meta['chunk_index']}"
+                f"[bold cyan]{i}.[/bold cyan] "
+                f"{format_source_reference(meta, include_chunk=True)}"
             )
             preview = r["text"][:500] + ("..." if len(r["text"]) > 500 else "")
             console.print(f"   {preview}\n")

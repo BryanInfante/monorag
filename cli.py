@@ -75,6 +75,7 @@ class CliConfig:
 
     chunk_size: int = 500
     chunk_overlap: int = 50
+    top_k: int = 5
     db_path: str | None = None
     db_url: str | None = None
     llm_provider: str | None = None
@@ -123,6 +124,7 @@ def load_cli_config() -> CliConfig:
     return CliConfig(
         chunk_size=_coerce_int(raw.get("chunk_size"), defaults.chunk_size),
         chunk_overlap=_coerce_int(raw.get("chunk_overlap"), defaults.chunk_overlap),
+        top_k=_coerce_int(raw.get("top_k"), defaults.top_k),
         db_path=_coerce_optional_string(raw.get("db_path")),
         db_url=_coerce_optional_string(raw.get("db_url")),
         llm_provider=_coerce_optional_string(raw.get("llm_provider")),
@@ -359,7 +361,7 @@ def show_help() -> None:
     table.add_row("list", "Listar todas las colecciones")
     table.add_row("delete", "Eliminar la colección activa")
     table.add_row("config", "Ver configuración actual")
-    table.add_row("config chunk <size> <overlap>", "Configurar y guardar chunking")
+    table.add_row("config chunk <size> <overlap> [top_k]", "Configurar chunking y opcionalmente MONORAG_TOP_K")
     table.add_row("config db path <ruta>", "Usar y guardar ChromaDB local en cualquier carpeta")
     table.add_row("config db url <url>", "Usar y guardar ChromaDB remoto por HTTP(S)")
     table.add_row("config db default", "Volver al storage por defecto y guardar")
@@ -375,6 +377,7 @@ def show_config(config: CliConfig) -> None:
     table.add_column("Valor")
     table.add_row("chunk_size", str(config.chunk_size))
     table.add_row("chunk_overlap", str(config.chunk_overlap))
+    table.add_row("top_k", str(config.top_k))
     table.add_row("db_path", config.db_path or default_chroma_db_path())
     table.add_row("db_url", config.db_url or default_chroma_url() or "—")
     table.add_row("llm_provider", config.llm_provider or os.getenv("LLM_PROVIDER") or "openai-compatible")
@@ -396,27 +399,31 @@ def cmd_config(config: CliConfig, args: str) -> CliConfig:
 
     parts = args.split()
     if parts[0] == "chunk":
-        if len(parts) != 3:
-            console.print("[red]Uso: config chunk <size> <overlap>[/red]")
+        if len(parts) not in (3, 4):
+            console.print("[red]Uso: config chunk <size> <overlap> [top_k][/red]")
             return config
         try:
             chunk_size = int(parts[1])
             chunk_overlap = int(parts[2])
+            top_k = int(parts[3]) if len(parts) == 4 else config.top_k
             if chunk_size < 1:
                 raise ValueError("chunk_size debe ser mayor o igual a 1")
             if chunk_overlap < 0:
                 raise ValueError("chunk_overlap debe ser mayor o igual a 0")
             if chunk_overlap >= chunk_size:
                 raise ValueError("chunk_overlap debe ser menor que chunk_size")
+            if top_k < 1:
+                raise ValueError("top_k debe ser mayor o igual a 1")
         except ValueError as exc:
             console.print(f"[red]Configuración inválida: {exc}[/red]")
             return config
 
         config.chunk_size = chunk_size
         config.chunk_overlap = chunk_overlap
+        config.top_k = top_k
         persist_cli_config_or_warn(config)
         console.print(
-            "[green]Chunking actualizado y guardado. Se aplicará a nuevas colecciones o al volver a usar una colección.[/green]"
+            "[green]Chunking actualizado y guardado (incluye top_k si se indicó). Se aplicará a nuevas consultas.[/green]"
         )
         return config
 
@@ -557,13 +564,16 @@ def cmd_index(rag: RAGModule, path_str: str) -> None:
         console.print(f"[red]Error al indexar: {e}[/red]")
 
 
-def cmd_ask(rag: RAGModule, query: str) -> None:
+def cmd_ask(rag: RAGModule, query: str, *, top_k: int = 5) -> None:
     if not query:
         console.print("[red]Uso: ask <pregunta>[/red]")
         return
     try:
         with console.status("Generando respuesta..."):
-            result = rag.ask(query)
+            try:
+                result = rag.ask(query, top_k=top_k)
+            except TypeError:
+                result = rag.ask(query)
         console.print("\n[bold cyan]Respuesta:[/bold cyan]")
         console.print(result["answer"])
         if result["sources"]:
@@ -576,7 +586,7 @@ def cmd_ask(rag: RAGModule, query: str) -> None:
         console.print(f"[red]Error: {e}[/red]")
 
 
-def cmd_chat(rag: RAGModule, collection_name: str) -> None:
+def cmd_chat(rag: RAGModule, collection_name: str, *, top_k: int = 5) -> None:
     """Chat mode: each line is a question. Type 'salir' to return."""
     console.print(
         Panel(
@@ -597,16 +607,19 @@ def cmd_chat(rag: RAGModule, collection_name: str) -> None:
         if query.lower() in ("salir", "exit", "quit"):
             console.print("[dim]Saliendo del modo chat...[/dim]\n")
             break
-        cmd_ask(rag, query)
+        cmd_ask(rag, query, top_k=top_k)
 
 
-def cmd_search(rag: RAGModule, query: str) -> None:
+def cmd_search(rag: RAGModule, query: str, *, top_k: int = 5) -> None:
     if not query:
         console.print("[red]Uso: search <consulta>[/red]")
         return
     try:
         with console.status("Buscando fragmentos..."):
-            results = rag.search(query)
+            try:
+                results = rag.search(query, top_k=top_k)
+            except TypeError:
+                results = rag.search(query)
         if not results:
             console.print("[yellow]No se encontraron resultados.[/yellow]")
             return
@@ -764,17 +777,17 @@ def main(argv: list[str] | None = None) -> None:
             if rag is None:
                 console.print("[red]Primero selecciona una colección con 'create' o 'use'.[/red]")
             else:
-                cmd_chat(rag, collection_name or "")
+                cmd_chat(rag, collection_name or "", top_k=config.top_k)
         elif command == "ask":
             if rag is None:
                 console.print("[red]Primero selecciona una colección con 'create' o 'use'.[/red]")
             else:
-                cmd_ask(rag, args.strip())
+                cmd_ask(rag, args.strip(), top_k=config.top_k)
         elif command == "search":
             if rag is None:
                 console.print("[red]Primero selecciona una colección con 'create' o 'use'.[/red]")
             else:
-                cmd_search(rag, args.strip())
+                cmd_search(rag, args.strip(), top_k=config.top_k)
         elif command == "clear":
             if rag is None or collection_name is None:
                 console.print("[red]No hay colección activa para limpiar.[/red]")

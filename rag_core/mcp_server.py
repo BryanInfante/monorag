@@ -318,6 +318,31 @@ def _log_configured_limits() -> None:
     )
 
 
+def _preload_embedding_stack_main_thread() -> None:
+    """Load heavy embedding imports in main thread before mcp.run()."""
+    with _stage("startup.preload.sentence_transformers"):
+        emit_mcp_breadcrumb("before import sentence_transformers")
+        with _suppress_stdout():
+            from rag_core.embedder import _load_sentence_transformer_class
+
+            _load_sentence_transformer_class()
+        emit_mcp_breadcrumb("after import sentence_transformers")
+
+    with _stage("startup.preload.transformers"):
+        emit_mcp_breadcrumb("before import transformers")
+        with _suppress_stdout():
+            import transformers  # noqa: F401
+        emit_mcp_breadcrumb("after import transformers")
+
+    with _stage("startup.preload.numpy"):
+        emit_mcp_breadcrumb("before import numpy")
+        with _suppress_stdout():
+            import numpy  # noqa: F401
+        emit_mcp_breadcrumb("after import numpy")
+
+    _configure_noisy_loggers()
+
+
 def _run_with_timeout(
     operation: str,
     timeout_seconds: float,
@@ -790,6 +815,7 @@ def main():
     """Start the MCP server using STDIO transport."""
     emit_mcp_breadcrumb("mcp_server:startup", detail=f"diagnostics={DIAGNOSTICS_VERSION}")
     _log_configured_limits()
+    _preload_embedding_stack_main_thread()
     mcp.run()
 
 

@@ -2,12 +2,14 @@
 
 import logging
 import os
+import json
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 
 from rag_core.mcp_diagnostics import emit_mcp_breadcrumb
+from rag_core.storage_paths import default_config_path
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +23,33 @@ Generator = None
 Retriever = None
 extract_pdf = None
 extract_txt = None
+
+
+def _load_persisted_runtime_config() -> dict[str, Any]:
+    """Load persisted MonoRAG config.json used by pipx/CLI installs."""
+    try:
+        path = Path(default_config_path())
+        if not path.exists():
+            return {}
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _resolve_setting(
+    explicit_value: str | None, env_var_name: str, persisted: dict[str, Any], persisted_key: str
+) -> str | None:
+    """Resolve a runtime setting with precedence: explicit > env > config.json."""
+    if explicit_value not in (None, ""):
+        return explicit_value
+    env_value = os.getenv(env_var_name)
+    if env_value not in (None, ""):
+        return env_value
+    persisted_value = persisted.get(persisted_key)
+    if persisted_value in (None, ""):
+        return None
+    return str(persisted_value)
 
 
 def _load_chunker_class():
@@ -169,6 +198,7 @@ class RAGModule:
         self._max_history = max_history
 
         load_dotenv()
+        persisted_config = _load_persisted_runtime_config()
 
         if chunker is None:
             ChunkerClass = _load_chunker_class()
@@ -200,8 +230,12 @@ class RAGModule:
             self.retriever = retriever
 
         if generator is None:
-            provider_name = llm_provider or os.getenv("LLM_PROVIDER")
-            api_key = llm_api_key or os.getenv("LLM_API_KEY")
+            provider_name = _resolve_setting(
+                llm_provider, "LLM_PROVIDER", persisted_config, "llm_provider"
+            )
+            api_key = _resolve_setting(
+                llm_api_key, "LLM_API_KEY", persisted_config, "llm_api_key"
+            )
             if not api_key:
                 legacy_groq_api_key = os.getenv("GROQ_API_KEY")
                 if legacy_groq_api_key:
@@ -212,8 +246,12 @@ class RAGModule:
                     "No se encontró una clave de API. Configure LLM_API_KEY en el archivo .env "
                     "o inyecte un generator personalizado."
                 )
-            base_url = llm_base_url or os.getenv("LLM_BASE_URL")
-            model_name = llm_model or os.getenv("LLM_MODEL")
+            base_url = _resolve_setting(
+                llm_base_url, "LLM_BASE_URL", persisted_config, "llm_base_url"
+            )
+            model_name = _resolve_setting(
+                llm_model, "LLM_MODEL", persisted_config, "llm_model"
+            )
 
             kwargs = {
                 "api_key": api_key,

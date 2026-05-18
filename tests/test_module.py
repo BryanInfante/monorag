@@ -5,6 +5,7 @@ Validates: Requirements 1.2, 1.5, 2.9, 2.10, 3.6, 3.7, 4.5, 2.8, 3.5, 6.2, 11.1,
 
 import logging
 import os
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -116,6 +117,73 @@ class TestRAGModuleInit:
             api_key="legacy-groq-key",
             base_url=None,
             provider_name="groq",
+        )
+
+    def test_persisted_config_json_is_used_when_env_is_missing(self, tmp_path, monkeypatch):
+        """RAGModule should fall back to MONORAG config.json for MCP/pipx flows."""
+        monkeypatch.delenv("LLM_API_KEY", raising=False)
+        monkeypatch.delenv("LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("LLM_BASE_URL", raising=False)
+        monkeypatch.delenv("LLM_MODEL", raising=False)
+        monkeypatch.delenv("GROQ_API_KEY", raising=False)
+
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "llm_api_key": "cfg-key",
+                    "llm_provider": "groq",
+                    "llm_model": "llama-3.3-70b-versatile",
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("MONORAG_CONFIG_PATH", str(config_path))
+
+        with patch("rag_core.module.load_dotenv"), \
+             patch("rag_core.module.Embedder"), \
+             patch("rag_core.module.Retriever"), \
+             patch("rag_core.module.Generator") as mock_generator_cls:
+            RAGModule("test-col")
+
+        mock_generator_cls.assert_called_once_with(
+            api_key="cfg-key",
+            base_url=None,
+            provider_name="groq",
+            model="llama-3.3-70b-versatile",
+        )
+
+    def test_env_vars_override_persisted_config_json(self, tmp_path, monkeypatch):
+        """Environment variables must take precedence over persisted config.json."""
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "llm_api_key": "cfg-key",
+                    "llm_provider": "groq",
+                    "llm_model": "cfg-model",
+                    "llm_base_url": "http://cfg.local/v1",
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("MONORAG_CONFIG_PATH", str(config_path))
+        monkeypatch.setenv("LLM_API_KEY", "env-key")
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("LLM_MODEL", "env-model")
+        monkeypatch.setenv("LLM_BASE_URL", "http://env.local/v1")
+
+        with patch("rag_core.module.load_dotenv"), \
+             patch("rag_core.module.Embedder"), \
+             patch("rag_core.module.Retriever"), \
+             patch("rag_core.module.Generator") as mock_generator_cls:
+            RAGModule("test-col")
+
+        mock_generator_cls.assert_called_once_with(
+            api_key="env-key",
+            base_url="http://env.local/v1",
+            provider_name="ollama",
+            model="env-model",
         )
 
     def test_custom_retriever_and_chunk_params_are_used(self, monkeypatch):

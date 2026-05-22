@@ -88,3 +88,31 @@ def test_cmd_search_prints_markdown_source_without_page(monkeypatch):
     assert "fragmento 2" in output
     assert "Error: 'page'" not in output
     assert "pág." not in output
+
+
+def test_help_uses_product_identity_and_explicit_top_k(monkeypatch):
+    """Help output should keep MonoRAG branding and show the optional top_k argument."""
+    buffer = _capture_cli_console(monkeypatch)
+
+    cli.show_help()
+
+    output = buffer.getvalue()
+    assert "MonoRAG" in output
+    assert "config chunk" in output
+    assert "[top_k]" in output
+    assert "top_k opcional" in output
+
+
+def test_prompt_uses_product_identity():
+    """The interactive prompt should show the product identity, not the package name."""
+    assert "MonoRAG" in cli.get_prompt(None)
+    assert "MonoRAG" in cli.get_prompt("docs")
+
+
+def test_banner_uses_product_identity(monkeypatch):
+    """The startup banner should render MonoRAG as the visible identity."""
+    buffer = _capture_cli_console(monkeypatch)
+
+    cli.show_banner()
+
+    assert "MonoRAG" in buffer.getvalue()

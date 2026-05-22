@@ -2,9 +2,11 @@
 
 import builtins
 import json
+from io import StringIO
 from pathlib import Path
 
 import pytest
+from rich.console import Console
 
 import cli
 from cli import CliConfig, cmd_config, load_cli_config
@@ -35,6 +37,16 @@ class _ConsoleProbe:
 
     def print(self, *values, **kwargs):
         self.output += " ".join(str(value) for value in values)
+
+
+def _capture_cli_console(monkeypatch) -> StringIO:
+    buffer = StringIO()
+    monkeypatch.setattr(
+        cli,
+        "console",
+        Console(file=buffer, force_terminal=False, color_system=None, width=120),
+    )
+    return buffer
 
 
 def test_config_llm_opens_guided_wizard_for_known_provider(monkeypatch):
@@ -111,6 +123,15 @@ def test_config_db_path_is_persisted():
     persisted = load_cli_config()
     assert persisted.db_path == r"C:\monorag-db"
     assert persisted.db_url is None
+
+
+def test_config_chunk_usage_shows_top_k(monkeypatch):
+    """Invalid chunk usage should render the optional top_k argument literally."""
+    buffer = _capture_cli_console(monkeypatch)
+
+    cmd_config(CliConfig(), "chunk 500")
+
+    assert "config chunk <size> <overlap> [top_k]" in buffer.getvalue()
 
 
 def test_llm_api_key_uses_keyring_when_available(monkeypatch):

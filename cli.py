@@ -1,4 +1,4 @@
-"""MONORAG — REPL-style CLI for the rag_core module.
+"""MonoRAG — REPL-style CLI for the rag_core module.
 
 Run with: python cli.py
 
@@ -54,6 +54,7 @@ from rag_core.storage_paths import (
 console = Console()
 
 PACKAGE_NAME = "monorag"
+DISPLAY_NAME = "MonoRAG"
 VERSION_FLAGS = ("--version", "-V", "-v")
 MISSING_METADATA_VALUE = (None, "", "N/A")
 NON_PAGINATED_SUFFIXES = (".txt", ".md")
@@ -69,11 +70,11 @@ LLM_PROVIDER_MENU = [
 LOCAL_LLM_PROVIDERS = {"ollama", "lm-studio", "lmstudio"}
 
 BANNER = r"""
- __  __  ___  _   _  ___  ____      _    ____
-|  \/  |/ _ \| \ | |/ _ \|  _ \    / \  / ___|
-| |\/| | | | |  \| | | | | |_) |  / _ \| |  _
-| |  | | |_| | |\  | |_| |  _ <  / ___ \ |_| |
-|_|  |_|\___/|_| \_|\___/|_| \_\/_/   \_\____|
+ __  __                   ____      _    ____
+|  \/  | ___  _ __   ___ |  _ \    / \  / ___|
+| |\/| |/ _ \| '_ \ / _ \| |_) |  / _ \| |  _
+| |  | | (_) | | | | (_) |  _ <  / ___ \ |_| |
+|_|  |_|\___/|_| |_|\___/|_| \_\/_/   \_\____|
 """
 
 
@@ -378,7 +379,8 @@ def show_banner() -> None:
     console.print(Text(BANNER, style="bold cyan"))
     console.print(
         Panel(
-            "Sistema de Recuperación Aumentada por Generación\n"
+            "[bold]MonoRAG[/bold]\n"
+            "Capa de conocimiento RAG local-first\n"
             "Escribe [bold]help[/bold] para ver los comandos disponibles.",
             style="bold magenta",
             expand=False,
@@ -390,7 +392,7 @@ def show_banner() -> None:
 
 def show_help() -> None:
     table = Table(
-        title="Comandos disponibles",
+        title="Comandos de MonoRAG",
         show_header=True,
         header_style="bold cyan",
         expand=False,
@@ -407,7 +409,10 @@ def show_help() -> None:
     table.add_row("list", "Listar todas las colecciones")
     table.add_row("delete", "Eliminar la colección activa")
     table.add_row("config", "Ver configuración actual")
-    table.add_row("config chunk <size> <overlap> [top_k]", "Configurar chunking y opcionalmente MONORAG_TOP_K")
+    table.add_row(
+        Text("config chunk <size> <overlap> [top_k]"),
+        "Configurar chunk_size, chunk_overlap y top_k opcional",
+    )
     table.add_row("config db path <ruta>", "Usar y guardar ChromaDB local en cualquier carpeta")
     table.add_row("config db url <url>", "Usar y guardar ChromaDB remoto por HTTP(S)")
     table.add_row("config db default", "Volver al storage por defecto y guardar")
@@ -418,7 +423,7 @@ def show_help() -> None:
 
 
 def show_config(config: CliConfig) -> None:
-    table = Table(title="Configuración actual", show_header=True, header_style="bold cyan")
+    table = Table(title="Configuración actual de MonoRAG", show_header=True, header_style="bold cyan")
     table.add_column("Clave", style="bold green")
     table.add_column("Valor")
     table.add_row("chunk_size", str(config.chunk_size))
@@ -446,7 +451,7 @@ def cmd_config(config: CliConfig, args: str) -> CliConfig:
     parts = args.split()
     if parts[0] == "chunk":
         if len(parts) not in (3, 4):
-            console.print("[red]Uso: config chunk <size> <overlap> [top_k][/red]")
+            console.print("Uso: config chunk <size> <overlap> [top_k]", style="red", markup=False)
             return config
         try:
             chunk_size = int(parts[1])
@@ -752,8 +757,8 @@ def cmd_delete(rag: RAGModule, collection_name: str) -> tuple[None, None] | tupl
 
 def get_prompt(collection_name: str | None) -> str:
     if collection_name:
-        return f"[bold cyan]monorag[/bold cyan] [dim]({collection_name})[/dim] > "
-    return "[bold cyan]monorag[/bold cyan] > "
+        return f"[bold cyan]{DISPLAY_NAME}[/bold cyan] [dim]({collection_name})[/dim] > "
+    return f"[bold cyan]{DISPLAY_NAME}[/bold cyan] > "
 
 
 def get_installed_version() -> str:
@@ -767,7 +772,7 @@ def get_installed_version() -> str:
 def handle_global_args(argv: list[str]) -> bool:
     """Handle non-interactive CLI flags before opening the REPL."""
     if len(argv) == 1 and argv[0] in VERSION_FLAGS:
-        console.print(f"{PACKAGE_NAME} {get_installed_version()}")
+        console.print(f"{DISPLAY_NAME} {get_installed_version()}")
         return True
     return False
 

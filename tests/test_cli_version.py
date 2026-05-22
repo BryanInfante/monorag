@@ -24,7 +24,7 @@ def test_main_prints_version_for_long_flag(monkeypatch):
 
     cli.main(["--version"])
 
-    assert buffer.getvalue().strip() == "monorag 9.8.7"
+    assert buffer.getvalue().strip() == "MonoRAG 9.8.7"
 
 
 def test_main_prints_version_for_short_flag(monkeypatch):
@@ -34,7 +34,7 @@ def test_main_prints_version_for_short_flag(monkeypatch):
 
     cli.main(["-V"])
 
-    assert buffer.getvalue().strip() == "monorag 9.8.7"
+    assert buffer.getvalue().strip() == "MonoRAG 9.8.7"
 
 
 def test_main_prints_version_for_lowercase_short_flag(monkeypatch):
@@ -44,4 +44,4 @@ def test_main_prints_version_for_lowercase_short_flag(monkeypatch):
 
     cli.main(["-v"])
 
-    assert buffer.getvalue().strip() == "monorag 9.8.7"
+    assert buffer.getvalue().strip() == "MonoRAG 9.8.7"

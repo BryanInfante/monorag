@@ -1,6 +1,7 @@
 # MonoRAG
 
 [Español](README.es.md)
+> Visual identity: use **MonoRAG** for the product. Use lowercase `monorag` and `monorag-mcp` only when referring to executable commands.
 
 MonoRAG is a local-first RAG knowledge layer for turning your documents into reusable context for AI assistants, CLIs, scripts, and MCP-compatible tools.
 
@@ -239,7 +240,7 @@ Main commands:
 | `clear` | Clear the active collection |
 | `delete` | Delete the active collection |
 | `config` | Show current CLI configuration |
-| `config chunk <size> <overlap> [top_k]` | Persist chunking and optional retrieval count |
+| `config chunk <size> <overlap> [top_k]` | Persist `chunk_size`, `chunk_overlap`, and optional `top_k` retrieval count |
 | `config db path <path>` | Persist a local ChromaDB path |
 | `config db url <url>` | Persist a remote ChromaDB HTTP(S) URL |
 | `config db default` | Reset persisted DB override |

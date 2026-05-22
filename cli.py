@@ -399,12 +399,12 @@ def show_help() -> None:
     )
     table.add_column("Comando", style="bold green", min_width=28)
     table.add_column("Descripción")
-    table.add_row("create <nombre>", "Crear y seleccionar una colección")
-    table.add_row("use <nombre>", "Seleccionar una colección existente")
-    table.add_row("index <ruta>", "Indexar un archivo o directorio")
+    table.add_row("create <name>", "Crear y seleccionar una colección")
+    table.add_row("use <name>", "Seleccionar una colección existente")
+    table.add_row("index <path>", "Indexar un archivo o directorio")
     table.add_row("chat", "Entrar en modo chat — escribe preguntas directamente")
-    table.add_row("ask <pregunta>", "Hacer una pregunta puntual")
-    table.add_row("search <consulta>", "Buscar fragmentos relevantes")
+    table.add_row("ask <question>", "Hacer una pregunta puntual")
+    table.add_row("search <query>", "Buscar fragmentos relevantes")
     table.add_row("clear", "Limpiar todos los documentos de la colección activa")
     table.add_row("list", "Listar todas las colecciones")
     table.add_row("delete", "Eliminar la colección activa")
@@ -413,7 +413,7 @@ def show_help() -> None:
         Text("config chunk <size> <overlap> [top_k]"),
         "Configurar chunk_size, chunk_overlap y top_k opcional",
     )
-    table.add_row("config db path <ruta>", "Usar y guardar ChromaDB local en cualquier carpeta")
+    table.add_row("config db path <path>", "Usar y guardar ChromaDB local en cualquier carpeta")
     table.add_row("config db url <url>", "Usar y guardar ChromaDB remoto por HTTP(S)")
     table.add_row("config db default", "Volver al storage por defecto y guardar")
     table.add_row("config llm", "Abrir asistente guiado y guardar proveedor LLM")
@@ -524,7 +524,7 @@ def cmd_config(config: CliConfig, args: str) -> CliConfig:
 
     if parts[0] == "db":
         if len(parts) < 2:
-            console.print("[red]Uso: config db path <ruta> | config db url <url> | config db default[/red]")
+            console.print("[red]Uso: config db path <path> | config db url <url> | config db default[/red]")
             return config
 
         if parts[1] == "default":
@@ -564,7 +564,7 @@ def cmd_config(config: CliConfig, args: str) -> CliConfig:
 
 def cmd_create(name: str, config: CliConfig) -> tuple[str | None, RAGModule | None]:
     if not name:
-        console.print("[red]Uso: create <nombre>[/red]")
+        console.print("[red]Uso: create <name>[/red]")
         return None, None
     try:
         with console.status("Creando colección..."):
@@ -578,7 +578,7 @@ def cmd_create(name: str, config: CliConfig) -> tuple[str | None, RAGModule | No
 
 def cmd_use(name: str, config: CliConfig) -> tuple[str | None, RAGModule | None]:
     if not name:
-        console.print("[red]Uso: use <nombre>[/red]")
+        console.print("[red]Uso: use <name>[/red]")
         return None, None
     try:
         with console.status("Conectando a la colección..."):
@@ -592,7 +592,7 @@ def cmd_use(name: str, config: CliConfig) -> tuple[str | None, RAGModule | None]
 
 def cmd_index(rag: RAGModule, path_str: str) -> None:
     if not path_str:
-        console.print("[red]Uso: index <ruta>[/red]")
+        console.print("[red]Uso: index <path>[/red]")
         return
 
     path = Path(strip_quotes(path_str))
@@ -617,7 +617,7 @@ def cmd_index(rag: RAGModule, path_str: str) -> None:
 
 def cmd_ask(rag: RAGModule, query: str, *, top_k: int = 5) -> None:
     if not query:
-        console.print("[red]Uso: ask <pregunta>[/red]")
+        console.print("[red]Uso: ask <question>[/red]")
         return
     try:
         with console.status("Generando respuesta..."):
@@ -663,7 +663,7 @@ def cmd_chat(rag: RAGModule, collection_name: str, *, top_k: int = 5) -> None:
 
 def cmd_search(rag: RAGModule, query: str, *, top_k: int = 5) -> None:
     if not query:
-        console.print("[red]Uso: search <consulta>[/red]")
+        console.print("[red]Uso: search <query>[/red]")
         return
     try:
         with console.status("Buscando fragmentos..."):

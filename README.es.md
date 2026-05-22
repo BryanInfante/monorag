@@ -230,18 +230,18 @@ Comandos principales:
 
 | Comando | Descripción |
 | --- | --- |
-| `create <nombre>` | Crear y seleccionar una colección |
-| `use <nombre>` | Seleccionar una colección existente |
-| `index <ruta>` | Indexar archivo o directorio |
+| `create <name>` | Crear y seleccionar una colección |
+| `use <name>` | Seleccionar una colección existente |
+| `index <path>` | Indexar archivo o directorio |
 | `chat` | Entrar en modo chat con historial en memoria |
-| `ask <pregunta>` | Hacer una pregunta puntual |
-| `search <consulta>` | Buscar fragmentos relevantes |
+| `ask <question>` | Hacer una pregunta puntual |
+| `search <query>` | Buscar fragmentos relevantes |
 | `list` | Listar colecciones |
 | `clear` | Limpiar la colección activa |
 | `delete` | Eliminar la colección activa |
 | `config` | Ver configuración actual |
 | `config chunk <size> <overlap> [top_k]` | Guardar `chunk_size`, `chunk_overlap` y `top_k` opcional |
-| `config db path <ruta>` | Guardar ruta local de ChromaDB |
+| `config db path <path>` | Guardar ruta local de ChromaDB |
 | `config db url <url>` | Guardar URL HTTP(S) de ChromaDB remoto |
 | `config db default` | Resetear override de DB |
 | `config llm` | Asistente guiado y persistente para LLM |

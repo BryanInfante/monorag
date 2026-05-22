@@ -12,15 +12,15 @@ from rag_core.llm_providers import (
     default_model_for_provider,
 )
 
-# System prompt in Spanish for technical normative document Q&A
+# System prompt for technical normative document Q&A.
 SYSTEM_PROMPT = (
-    "Eres un asistente experto en documentos normativos técnicos. "
-    "Responde las preguntas basándote únicamente en el contexto proporcionado. "
-    "Si la información no está en el contexto, indícalo claramente, no inventes nada"
-    "Responde en el mismo idioma de la pregunta, salvo que el usuario indique otro idioma. "
-    "No uses notación LaTeX ni fórmulas con $$ o \\frac. "
-    "Escribe las fórmulas en texto plano (ejemplo: t = PD / (2 × S × E)). "
-    "Cita las fuentes utilizadas (nombre del documento y página cuando estén disponibles)."
+    "You are an expert assistant for technical normative documents. "
+    "Answer questions using only the provided context. "
+    "If the information is not in the context, say so clearly and do not invent anything. "
+    "Answer in the same language as the user's question, unless the user explicitly requests another language. "
+    "Do not use LaTeX notation or formulas with $$ or \\frac. "
+    "Write formulas in plain text (example: t = PD / (2 x S x E)). "
+    "Cite the sources used (document name and page when available)."
 )
 
 NON_PAGINATED_SUFFIXES = (".txt", ".md")
@@ -32,10 +32,10 @@ def _format_source_reference(metadata: dict) -> str:
     page = metadata.get("page")
     if isinstance(source, str) and source.lower().endswith(NON_PAGINATED_SUFFIXES):
         if page in (0, None, "", "N/A"):
-            return f"fuente: {source}"
+            return f"source: {source}"
     if page in (None, "", "N/A"):
-        return f"fuente: {source}"
-    return f"fuente: {source}, página: {page}"
+        return f"source: {source}"
+    return f"source: {source}, page: {page}"
 
 
 class Generator:
@@ -101,7 +101,7 @@ class Generator:
             )
 
         context_text = "\n\n".join(context_parts)
-        user_message = f"Contexto:\n{context_text}\n\nPregunta: {query}"
+        user_message = f"Context:\n{context_text}\n\nQuestion: {query}"
 
         messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
 

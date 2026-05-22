@@ -13,19 +13,19 @@ from rag_core.generator import SYSTEM_PROMPT, Generator, _format_source_referenc
 class TestSystemPrompt:
     """Verify the system prompt content."""
 
-    def test_system_prompt_is_in_spanish(self):
-        """SYSTEM_PROMPT should contain expected Spanish instructions."""
-        assert "Responde" in SYSTEM_PROMPT
-        assert "espa\u00f1ol" in SYSTEM_PROMPT
-        assert "contexto" in SYSTEM_PROMPT
+    def test_system_prompt_instructs_same_language_as_question(self):
+        """SYSTEM_PROMPT should instruct the model to answer in the question language."""
+        assert "same language" in SYSTEM_PROMPT
+        assert "user's question" in SYSTEM_PROMPT
+        assert "provided context" in SYSTEM_PROMPT
 
     def test_system_prompt_mentions_normative_documents(self):
         """SYSTEM_PROMPT should reference technical normative documents."""
-        assert "normativos" in SYSTEM_PROMPT
+        assert "normative documents" in SYSTEM_PROMPT
 
     def test_system_prompt_instructs_source_citation(self):
         """SYSTEM_PROMPT should instruct the model to cite sources."""
-        assert "fuentes" in SYSTEM_PROMPT
+        assert "sources" in SYSTEM_PROMPT
 
 
 class TestGeneratorGenerate:
@@ -52,8 +52,8 @@ class TestGeneratorGenerate:
         messages = kwargs["messages"]
         assert messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
         assert messages[-1]["role"] == "user"
-        assert "Contexto:" in messages[-1]["content"]
-        assert "fuente: doc.pdf, p\u00e1gina: 1" in messages[-1]["content"]
+        assert "Context:" in messages[-1]["content"]
+        assert "source: doc.pdf, page: 1" in messages[-1]["content"]
 
     def test_provider_error_raises_runtime_error(self):
         """Provider failures should propagate as RuntimeError with Spanish message."""
@@ -87,9 +87,9 @@ class TestSourceFormatting:
 
     def test_txt_with_page_zero_omits_fake_page(self):
         """TXT/MD sources should not display page 0 as if it were a real page."""
-        assert _format_source_reference({"source": "archivo.txt", "page": 0}) == "fuente: archivo.txt"
-        assert _format_source_reference({"source": "notas.md", "page": 0}) == "fuente: notas.md"
+        assert _format_source_reference({"source": "archivo.txt", "page": 0}) == "source: archivo.txt"
+        assert _format_source_reference({"source": "notas.md", "page": 0}) == "source: notas.md"
 
     def test_pdf_keeps_real_page_numbers(self):
         """Paginated formats should preserve the page label."""
-        assert _format_source_reference({"source": "manual.pdf", "page": 3}) == "fuente: manual.pdf, página: 3"
+        assert _format_source_reference({"source": "manual.pdf", "page": 3}) == "source: manual.pdf, page: 3"

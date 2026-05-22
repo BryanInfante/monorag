@@ -6,6 +6,13 @@ import tempfile
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def isolate_persisted_user_config(monkeypatch, tmp_path):
+    """Keep tests independent from the developer's real MonoRAG config."""
+    monkeypatch.setenv("MONORAG_CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setenv("MONORAG_DISABLE_KEYRING", "1")
+
+
 @pytest.fixture
 def tmp_chroma_dir(tmp_path):
     """Provide a temporary directory for ChromaDB persistence."""

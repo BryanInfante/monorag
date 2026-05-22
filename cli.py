@@ -35,6 +35,14 @@ from rag_core.llm_providers import (
     default_model_for_provider,
     normalize_provider_name,
 )
+from rag_core.secret_store import (
+    KEYRING_REFERENCE,
+    LLM_API_KEY_SECRET,
+    delete_secret,
+    get_secret,
+    is_keyring_reference,
+    set_secret,
+)
 from rag_core.storage_paths import (
     default_chroma_api_key,
     default_chroma_db_path,
@@ -46,7 +54,7 @@ from rag_core.storage_paths import (
 console = Console()
 
 PACKAGE_NAME = "monorag"
-VERSION_FLAGS = ("--version", "-V")
+VERSION_FLAGS = ("--version", "-V", "-v")
 MISSING_METADATA_VALUE = (None, "", "N/A")
 NON_PAGINATED_SUFFIXES = (".txt", ".md")
 
@@ -102,6 +110,13 @@ def _coerce_int(value, default: int) -> int:
         return default
 
 
+def _load_persisted_llm_api_key(value) -> str | None:
+    """Load the persisted LLM API key from keyring or legacy JSON."""
+    if is_keyring_reference(value):
+        return get_secret(LLM_API_KEY_SECRET)
+    return _coerce_optional_string(value)
+
+
 def load_cli_config() -> CliConfig:
     """Load persistent CLI configuration from the user config file."""
     path = Path(default_config_path())
@@ -130,11 +145,22 @@ def load_cli_config() -> CliConfig:
         llm_provider=_coerce_optional_string(raw.get("llm_provider")),
         llm_base_url=_coerce_optional_string(raw.get("llm_base_url")),
         llm_model=_coerce_optional_string(raw.get("llm_model")),
-        llm_api_key=_coerce_optional_string(raw.get("llm_api_key")),
+        llm_api_key=_load_persisted_llm_api_key(raw.get("llm_api_key")),
     )
 
 
-def save_cli_config(config: CliConfig) -> None:
+def _read_existing_config_value(path: Path, key: str):
+    """Read one persisted config value without failing the save flow."""
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    return raw.get(key)
+
+
+def save_cli_config(config: CliConfig, *, clear_llm_secret: bool = False) -> None:
     """Persist CLI configuration to the user config file."""
     path = Path(default_config_path())
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,16 +169,27 @@ def save_cli_config(config: CliConfig) -> None:
         for key, value in asdict(config).items()
         if key in PERSISTED_CONFIG_FIELDS
     }
+    llm_api_key = data.get("llm_api_key")
+    if isinstance(llm_api_key, str) and llm_api_key:
+        if set_secret(LLM_API_KEY_SECRET, llm_api_key):
+            data["llm_api_key"] = KEYRING_REFERENCE
+    elif clear_llm_secret:
+        delete_secret(LLM_API_KEY_SECRET)
+        data["llm_api_key"] = None
+    elif is_keyring_reference(_read_existing_config_value(path, "llm_api_key")):
+        data["llm_api_key"] = KEYRING_REFERENCE
+    else:
+        data["llm_api_key"] = None
     path.write_text(
         json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
 
-def persist_cli_config_or_warn(config: CliConfig) -> None:
+def persist_cli_config_or_warn(config: CliConfig, *, clear_llm_secret: bool = False) -> None:
     """Persist CLI configuration and keep the session alive if saving fails."""
     try:
-        save_cli_config(config)
+        save_cli_config(config, clear_llm_secret=clear_llm_secret)
     except OSError as exc:
         console.print(f"[yellow]Configuración aplicada solo a esta sesión; no se pudo guardar: {exc}[/yellow]")
 
@@ -214,6 +251,15 @@ def prompt_required(label: str, default: str | None = None) -> str:
         if value:
             return value
         console.print("[red]Este valor es obligatorio.[/red]")
+
+
+def prompt_secret(label: str, current: str | None = None) -> str:
+    """Prompt for a secret without echoing the current value as a default."""
+    if current:
+        console.print(f"{label} (Enter para mantener la actual): ", end="")
+        value = strip_quotes(input().strip())
+        return value or current
+    return prompt_required(label)
 
 
 def resolve_current_llm_api_key(config: CliConfig) -> str | None:
@@ -295,7 +341,7 @@ def cmd_config_llm_wizard(config: CliConfig) -> CliConfig:
 
     if current_api_key:
         console.print(f"API key actual: [dim]{mask_secret(current_api_key)}[/dim]")
-        api_key = prompt_text("API key (Enter para mantener la actual)", current_api_key)
+        api_key = prompt_secret("API key", current_api_key)
     else:
         api_key = prompt_required("API key")
 
@@ -436,7 +482,7 @@ def cmd_config(config: CliConfig, args: str) -> CliConfig:
             config.llm_base_url = None
             config.llm_model = None
             config.llm_api_key = None
-            persist_cli_config_or_warn(config)
+            persist_cli_config_or_warn(config, clear_llm_secret=True)
             console.print("[green]Proveedor LLM restaurado al valor de .env/default y guardado.[/green]")
             return config
 

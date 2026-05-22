@@ -9,6 +9,7 @@ from typing import Any
 from dotenv import load_dotenv
 
 from rag_core.mcp_diagnostics import emit_mcp_breadcrumb
+from rag_core.secret_store import LLM_API_KEY_SECRET, get_secret, is_keyring_reference
 from rag_core.storage_paths import default_config_path
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,8 @@ def _load_persisted_runtime_config() -> dict[str, Any]:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
+    if isinstance(raw, dict) and is_keyring_reference(raw.get("llm_api_key")):
+        raw["llm_api_key"] = get_secret(LLM_API_KEY_SECRET)
     return raw if isinstance(raw, dict) else {}
 
 

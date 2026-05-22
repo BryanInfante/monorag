@@ -36,3 +36,12 @@ def test_main_prints_version_for_short_flag(monkeypatch):
 
     assert buffer.getvalue().strip() == "monorag 9.8.7"
 
+
+def test_main_prints_version_for_lowercase_short_flag(monkeypatch):
+    """`monorag -v` should match common CLI version flag expectations."""
+    buffer = _capture_cli_console(monkeypatch)
+    monkeypatch.setattr(cli, "package_version", lambda package_name: "9.8.7")
+
+    cli.main(["-v"])
+
+    assert buffer.getvalue().strip() == "monorag 9.8.7"

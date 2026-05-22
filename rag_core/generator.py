@@ -14,13 +14,13 @@ from rag_core.llm_providers import (
 
 # System prompt in Spanish for technical normative document Q&A
 SYSTEM_PROMPT = (
-    "Eres un asistente experto en documentos normativos t\u00e9cnicos. "
-    "Responde las preguntas bas\u00e1ndote \u00fanicamente en el contexto proporcionado. "
-    "Si la informaci\u00f3n no est\u00e1 en el contexto, ind\u00edcalo claramente. "
-    "Responde siempre en espa\u00f1ol. "
-    "No uses notaci\u00f3n LaTeX ni f\u00f3rmulas con $$ o \\frac. "
-    "Escribe las f\u00f3rmulas en texto plano (ejemplo: t = PD / (2 \u00d7 S \u00d7 E)). "
-    "Cita las fuentes utilizadas (nombre del documento y p\u00e1gina cuando est\u00e9n disponibles)."
+    "Eres un asistente experto en documentos normativos técnicos. "
+    "Responde las preguntas basándote únicamente en el contexto proporcionado. "
+    "Si la información no está en el contexto, indícalo claramente, no inventes nada"
+    "Responde en el mismo idioma de la pregunta, salvo que el usuario indique otro idioma. "
+    "No uses notación LaTeX ni fórmulas con $$ o \\frac. "
+    "Escribe las fórmulas en texto plano (ejemplo: t = PD / (2 × S × E)). "
+    "Cita las fuentes utilizadas (nombre del documento y página cuando estén disponibles)."
 )
 
 NON_PAGINATED_SUFFIXES = (".txt", ".md")

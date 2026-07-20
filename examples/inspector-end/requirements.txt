@@ -1,0 +1,6 @@
+# Inspector END example agent dependencies.
+# MonoRAG is installed from the parent repo (pip install -e ../..)
+# or from GitHub (pip install git+https://github.com/BryanInfante/monorag.git)
+
+streamlit==1.45.0
+python-dotenv==1.2.2

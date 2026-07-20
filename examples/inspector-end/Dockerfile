@@ -1,7 +1,7 @@
 # Inspector END — Multi-stage Dockerfile
 #
 # Stage 1: Download the embedding model (heavy, cached layer)
-# Stage 2: Slim runtime with Streamlit app
+# Stage 2: Slim runtime with FastAPI app
 
 # --- Stage 1: Model download ---
 FROM python:3.11-slim AS model-downloader
@@ -18,7 +18,7 @@ WORKDIR /app
 # Install git (needed for pip install from GitHub)
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
-# Install MonoRAG and example dependencies
+# Install example dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -32,7 +32,8 @@ COPY --from=model-downloader /root/.cache/huggingface /root/.cache/huggingface
 COPY config.py .
 COPY agent_generator.py .
 COPY agents.md .
-COPY app.py .
+COPY server.py .
+COPY static/ ./static/
 
 # Create data directory for ChromaDB persistence
 RUN mkdir -p /app/data/chroma_db
@@ -42,12 +43,11 @@ ENV MONORAG_DB_PATH=/app/data/chroma_db
 ENV MONORAG_COLLECTION=inspector-end
 ENV LLM_PROVIDER=groq
 ENV LLM_MODEL=llama-3.3-70b-versatile
-ENV STREAMLIT_SERVER_PORT=8501
-ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
+ENV PORT=8080
 
-EXPOSE 8501
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status')" || exit 1
 
-ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8080"]

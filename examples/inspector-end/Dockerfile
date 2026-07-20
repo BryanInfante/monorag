@@ -43,7 +43,6 @@ ENV MONORAG_DB_PATH=/app/data/chroma_db
 ENV MONORAG_COLLECTION=inspector-end
 ENV LLM_PROVIDER=groq
 ENV LLM_MODEL=llama-3.3-70b-versatile
-ENV PORT=8080
 
 EXPOSE 8080
 

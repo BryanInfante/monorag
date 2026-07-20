@@ -26,15 +26,27 @@ AGENTS_MD_PATH = EXAMPLE_DIR / "agents.md"
 # --- UI Constants ---
 
 AGENT_NAME = "Inspector END"
+AGENT_SUBTITLE = "Asistente experto en normas de END"
 AGENT_DESCRIPTION = (
     "Expert assistant specialized in Non-Destructive Testing (NDT) standards. "
     "Ask questions about inspection criteria, procedures, and acceptance standards."
 )
 
 SUGGESTED_QUESTIONS = [
-    "What are the acceptance criteria for liquid penetrant indications?",
-    "What surface preparation is required before penetrant testing?",
-    "What is the minimum dwell time for penetrant application?",
-    "How should excess penetrant be removed?",
-    "What are the environmental requirements for penetrant testing?",
+    "¿Cuáles son los criterios de aceptación para UT según ASME Sección V?",
+    "¿Cómo se calibra la inspección por partículas magnéticas?",
+    "¿Qué preparación de superficie requiere el ensayo por líquidos penetrantes?",
+    "Explica los requisitos de densidad de película radiográfica.",
+    "¿Cuáles son los requisitos de calificación para END Nivel II?",
 ]
+
+EMPTY_STATE_TITLE = "¿Cómo puedo ayudarte con tu inspección?"
+EMPTY_STATE_DESCRIPTION = (
+    "Pregunta sobre criterios de aceptación, calibración, "
+    "calificación o cualquier procedimiento en las normas de END indexadas."
+)
+
+DISCLAIMER = (
+    "Inspector END puede cometer errores. "
+    "Verifica los criterios críticos con la norma original."
+)

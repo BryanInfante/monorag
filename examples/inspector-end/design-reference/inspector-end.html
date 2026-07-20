@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inspector END</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="inspector-end.css">
+<style> html, body { margin: 0; } </style>
+</head>
+<body>
+
+<div class="ie-app">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="ie-sidebar">
+    <div class="ie-brand">
+      <div class="ie-logo">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round">
+          <circle cx="10.5" cy="10.5" r="6.5"></circle><line x1="15.5" y1="15.5" x2="21" y2="21"></line>
+        </svg>
+      </div>
+      <div>
+        <div class="ie-title">Inspector END</div>
+        <div class="ie-subtitle">Asistente experto en normas de END</div>
+      </div>
+    </div>
+
+    <div class="ie-divider"></div>
+
+    <div class="ie-status">
+      <div class="ie-status-dot"><span class="dot"></span><span class="label">CONECTADO</span></div>
+      <div class="ie-metrics">
+        <div class="ie-metric"><div class="m-label">Documentos</div><div class="m-value">12</div></div>
+        <div class="ie-metric"><div class="m-label">Colección</div><div class="m-value mono">inspector-end</div></div>
+      </div>
+      <div class="ie-config">
+        <div><span class="k">Model:</span> llama-3.3-70b-versatile</div>
+        <div><span class="k">Provider:</span> groq</div>
+      </div>
+    </div>
+
+    <div class="ie-divider"></div>
+
+    <div class="ie-suggest">
+      <div class="ie-suggest-head">Preguntas sugeridas</div>
+      <div class="ie-pills">
+        <button class="ie-pill">¿Cuáles son los criterios de aceptación para UT según ASME Sección V?</button>
+        <button class="ie-pill">¿Cómo se calibra la inspección por partículas magnéticas?</button>
+        <button class="ie-pill">¿Qué preparación de superficie requiere el ensayo por líquidos penetrantes?</button>
+        <button class="ie-pill">Explica los requisitos de densidad de película radiográfica.</button>
+        <button class="ie-pill">¿Cuáles son los requisitos de calificación para END Nivel II?</button>
+      </div>
+    </div>
+
+    <div class="ie-divider"></div>
+
+    <div class="ie-footer">Desarrollado con <a href="#">MonoRAG</a></div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="ie-main">
+    <div class="ie-topbar">
+      <div class="ie-topbar-title">Asistente de normas END</div>
+      <div class="ie-switch">
+        <button data-view="active" class="active">Conversación</button>
+        <button data-view="empty">Estado vacío</button>
+      </div>
+    </div>
+
+    <!-- ===== ACTIVE CONVERSATION ===== -->
+    <div class="ie-view" data-view="active">
+      <div class="ie-scroll">
+        <div class="ie-thread">
+
+          <div class="ie-row-user">
+            <div class="ie-bubble-user">¿Cuáles son los criterios de aceptación para el ensayo ultrasónico según ASME Sección V?</div>
+          </div>
+
+          <div class="ie-assistant">
+            <div class="ie-assistant-msg">
+              <div class="ie-avatar">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"></circle><line x1="15.5" y1="15.5" x2="21" y2="21"></line></svg>
+              </div>
+              <div class="ie-bubble-assistant">
+                Según <strong>ASME Sección V, Artículo 4</strong>, los resultados del examen ultrasónico se evalúan frente a los criterios de aceptación de la sección de código de referencia (p. ej., Sección VIII, Div. 1). La evaluación por amplitud utiliza una curva de <strong>Corrección Distancia-Amplitud (DAC)</strong>: toda indicación que supere el 20 % de la DAC debe investigarse, y los reflectores que excedan el nivel de referencia con una longitud mayor al límite aplicable son rechazables.
+              </div>
+            </div>
+
+            <div class="ie-sources">
+              <button class="ie-sources-toggle" aria-expanded="true">
+                <span class="caret">▾</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>
+                Fuentes (3)
+              </button>
+              <div class="ie-sources-list">
+                <div class="ie-source">
+                  <div class="ie-source-head"><span class="ie-source-file">ASME-BPVC-V-2023.pdf</span><span class="ie-source-page">p. 142</span></div>
+                  <blockquote>«Las indicaciones que superen el 20 % de la DAC de referencia deberán investigarse hasta que el operador pueda determinar la forma, identidad y ubicación de todos esos reflectores…»</blockquote>
+                </div>
+                <div class="ie-source">
+                  <div class="ie-source-head"><span class="ie-source-file">ASME-VIII-Div1-UW51.pdf</span><span class="ie-source-page">p. 388</span></div>
+                  <blockquote>«Las indicaciones caracterizadas como grietas, falta de fusión o penetración incompleta son inaceptables sin importar su longitud. Otras imperfecciones son inaceptables si la amplitud supera el nivel de referencia…»</blockquote>
+                </div>
+                <div class="ie-source">
+                  <div class="ie-source-head"><span class="ie-source-file">ASNT-SNT-TC-1A.pdf</span><span class="ie-source-page">p. 27</span></div>
+                  <blockquote>«La evaluación de indicaciones solo la realizará personal calificado y certificado al menos en Nivel II en el método aplicable…»</blockquote>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ie-row-user">
+            <div class="ie-bubble-user">¿Y qué longitud de indicación es rechazable para una soldadura de 1 pulgada de espesor?</div>
+          </div>
+
+          <div class="ie-thinking">
+            <div class="ie-avatar">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"></circle><line x1="15.5" y1="15.5" x2="21" y2="21"></line></svg>
+            </div>
+            <div class="ie-thinking-bubble"><span class="ie-spinner"></span><span class="ie-thinking-text">Pensando…</span></div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="ie-input-wrap">
+        <div class="ie-input">
+          <input type="text" placeholder="Haz una pregunta sobre los documentos indexados…">
+          <button class="ie-send" aria-label="Enviar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+          </button>
+        </div>
+        <div class="ie-disclaimer">Inspector END puede cometer errores. Verifica los criterios críticos con la norma original.</div>
+      </div>
+    </div>
+
+    <!-- ===== EMPTY STATE ===== -->
+    <div class="ie-view" data-view="empty" hidden>
+      <div class="ie-empty">
+        <div class="ie-empty-logo">
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"></circle><line x1="15.5" y1="15.5" x2="21" y2="21"></line></svg>
+        </div>
+        <h2>¿Cómo puedo ayudarte con tu inspección?</h2>
+        <p>Pregunta sobre criterios de aceptación, calibración, calificación o cualquier procedimiento en las 12 normas de END indexadas.</p>
+        <div class="ie-empty-pills">
+          <button class="ie-empty-pill">Criterios de aceptación para UT según ASME V</button>
+          <button class="ie-empty-pill">Pasos de calibración de MPI</button>
+          <button class="ie-empty-pill">Calificación END Nivel II</button>
+        </div>
+      </div>
+
+      <div class="ie-input-wrap">
+        <div class="ie-input">
+          <input type="text" placeholder="Haz una pregunta sobre los documentos indexados…">
+          <button class="ie-send" aria-label="Enviar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Optional demo interactions (remove if your program controls state) -->
+<script>
+  // view switcher
+  document.querySelectorAll('.ie-switch button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var view = btn.dataset.view;
+      document.querySelectorAll('.ie-switch button').forEach(function (b) { b.classList.toggle('active', b === btn); });
+      document.querySelectorAll('.ie-view').forEach(function (v) { v.hidden = v.dataset.view !== view; });
+    });
+  });
+  // collapsible sources
+  document.querySelectorAll('.ie-sources-toggle').forEach(function (t) {
+    t.addEventListener('click', function () {
+      var list = t.parentElement.querySelector('.ie-sources-list');
+      var open = list.hidden;
+      list.hidden = !open;
+      t.setAttribute('aria-expanded', String(open));
+      t.querySelector('.caret').textContent = open ? '▾' : '▸';
+    });
+  });
+</script>
+</body>
+</html>

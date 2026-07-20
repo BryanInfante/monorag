@@ -18,12 +18,12 @@ WORKDIR /app
 # Install git (needed for pip install from GitHub)
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
-# Install example dependencies
+# Install MonoRAG from GitHub first (determines starlette version via fastmcp)
+RUN pip install --no-cache-dir "git+https://github.com/BryanInfante/monorag.git"
+
+# Install example dependencies (fastapi resolves against already-installed starlette)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Install MonoRAG from GitHub
-RUN pip install --no-cache-dir "git+https://github.com/BryanInfante/monorag.git"
 
 # Copy cached embedding model from stage 1
 COPY --from=model-downloader /root/.cache/huggingface /root/.cache/huggingface

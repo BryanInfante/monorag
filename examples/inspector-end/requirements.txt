@@ -3,5 +3,6 @@
 # or from GitHub (pip install git+https://github.com/BryanInfante/monorag.git)
 
 fastapi==0.115.0
+starlette==0.38.6
 uvicorn==0.30.6
 python-dotenv==1.2.2

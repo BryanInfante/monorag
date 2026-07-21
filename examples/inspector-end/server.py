@@ -1,19 +1,27 @@
-"""Inspector END — FastAPI server.
+"""Inspector END — Web server that mounts on MonoRAG's MCP HTTP transport.
 
-Serves the static HTML/CSS/JS frontend and provides API endpoints
-for the chat functionality backed by MonoRAG's RAGModule.
+This is a thin layer that adds static file serving and a simple JSON API
+on top of the MCP server. The MCP server handles all RAG operations;
+this file just adds the web UI endpoints.
+
+Run with: python server.py
 """
 
+import json
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import FileResponse, JSONResponse
+from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
 
 load_dotenv()
+
+# Import the MCP server instance
+from rag_core.mcp_server import mcp, _get_or_create, _suppress_stdout
 
 from config import (
     LLM_API_KEY,
@@ -26,16 +34,16 @@ from config import (
 )
 from agent_generator import InspectorGenerator
 
-app = FastAPI(title="Inspector END", docs_url=None, redoc_url=None)
+STATIC_DIR = Path(__file__).parent / "static"
 
-# --- RAG Module Singleton ---
+# --- RAG Module with custom generator ---
 
 _rag = None
 _rag_error = None
 
 
-def get_rag():
-    """Lazily initialize and return the RAGModule instance."""
+def _get_inspector_rag():
+    """Get RAGModule instance with Inspector END personality."""
     global _rag, _rag_error
     if _rag is not None:
         return _rag
@@ -71,9 +79,8 @@ def get_rag():
         return None
 
 
-def get_document_count() -> int:
-    """Get document count from the active collection."""
-    rag = get_rag()
+def _get_document_count() -> int:
+    rag = _get_inspector_rag()
     if rag is None:
         return 0
     try:
@@ -82,78 +89,69 @@ def get_document_count() -> int:
         return 0
 
 
-# --- API Models ---
+# --- Web endpoints ---
 
 
-class AskRequest(BaseModel):
-    query: str
+async def index(request: Request):
+    return FileResponse(str(STATIC_DIR / "index.html"))
 
 
-class AskResponse(BaseModel):
-    answer: str | None = None
-    sources: list | None = None
-    error: str | None = None
+async def api_status(request: Request):
+    rag = _get_inspector_rag()
+    return JSONResponse({
+        "connected": rag is not None,
+        "document_count": _get_document_count(),
+        "collection": MONORAG_COLLECTION,
+        "model": LLM_MODEL,
+        "provider": LLM_PROVIDER,
+        "suggested_questions": SUGGESTED_QUESTIONS,
+        "error": _rag_error,
+    })
 
 
-class StatusResponse(BaseModel):
-    connected: bool
-    document_count: int
-    collection: str
-    model: str
-    provider: str
-    suggested_questions: list[str]
-    error: str | None = None
+async def api_ask(request: Request):
+    body = await request.json()
+    query = body.get("query", "").strip()
 
+    if not query:
+        return JSONResponse({"error": "La pregunta no puede estar vacía."})
 
-# --- API Endpoints ---
-
-
-@app.get("/api/status")
-def status() -> StatusResponse:
-    """Return current connection status and configuration."""
-    rag = get_rag()
-    return StatusResponse(
-        connected=rag is not None,
-        document_count=get_document_count(),
-        collection=MONORAG_COLLECTION,
-        model=LLM_MODEL,
-        provider=LLM_PROVIDER,
-        suggested_questions=SUGGESTED_QUESTIONS,
-        error=_rag_error,
-    )
-
-
-@app.post("/api/ask")
-def ask(request: AskRequest) -> AskResponse:
-    """Ask a question and return the answer with sources."""
-    rag = get_rag()
+    rag = _get_inspector_rag()
     if rag is None:
-        return AskResponse(error=_rag_error or "Service not available.")
-
-    if not request.query.strip():
-        return AskResponse(error="La pregunta no puede estar vacía.")
+        return JSONResponse({"error": _rag_error or "Service not available."})
 
     try:
-        result = rag.ask(request.query, top_k=5)
-        return AskResponse(
-            answer=result["answer"],
-            sources=result["sources"],
-        )
+        result = rag.ask(query, top_k=5)
+        return JSONResponse({
+            "answer": result["answer"],
+            "sources": result["sources"],
+        })
     except RuntimeError as e:
-        return AskResponse(
-            error=f"Error al generar la respuesta: {e}. Intenta de nuevo en un momento."
-        )
+        return JSONResponse({
+            "error": f"Error al generar la respuesta: {e}. Intenta de nuevo en un momento."
+        })
     except Exception as e:
-        return AskResponse(error=f"Error inesperado: {e}")
+        return JSONResponse({"error": f"Error inesperado: {e}"})
 
 
-# --- Static Files ---
+# --- Starlette app with MCP mounted ---
 
-STATIC_DIR = Path(__file__).parent / "static"
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+mcp_app = mcp.http_app(path="/mcp")
+
+app = Starlette(
+    routes=[
+        Route("/", index),
+        Route("/api/status", api_status, methods=["GET"]),
+        Route("/api/ask", api_ask, methods=["POST"]),
+        Mount("/mcp", app=mcp_app),
+        Mount("/static", app=StaticFiles(directory=str(STATIC_DIR)), name="static"),
+    ],
+    lifespan=mcp_app.lifespan,
+)
 
 
-@app.get("/")
-def index():
-    """Serve the main HTML page."""
-    return FileResponse(str(STATIC_DIR / "index.html"))
+if __name__ == "__main__":
+    import uvicorn
+
+    port = int(os.getenv("PORT", "8080"))
+    uvicorn.run(app, host="0.0.0.0", port=port)

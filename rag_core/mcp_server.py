@@ -861,11 +861,30 @@ def index_file_content(content_base64: str, filename: str, collection: str) -> s
 
 
 def main():
-    """Start the MCP server using STDIO transport."""
+    """Start the MCP server using the configured transport.
+
+    Transport is selected via MONORAG_MCP_TRANSPORT environment variable:
+    - "stdio" (default): Standard I/O for local MCP clients (Kiro, Claude Desktop).
+    - "http": Streamable HTTP for remote access and web deployments.
+
+    When using HTTP transport, the port is read from MONORAG_MCP_PORT (default: 8000).
+    """
     emit_mcp_breadcrumb("mcp_server:startup", detail=f"diagnostics={DIAGNOSTICS_VERSION}")
     _log_configured_limits()
-    _preload_embedding_stack_main_thread()
-    mcp.run()
+
+    transport = os.getenv("MONORAG_MCP_TRANSPORT", "stdio").lower()
+
+    if transport == "stdio":
+        _preload_embedding_stack_main_thread()
+        mcp.run()
+    elif transport == "http":
+        port = int(os.getenv("MONORAG_MCP_PORT", "8000"))
+        _preload_embedding_stack_main_thread()
+        mcp.run(transport="http", host="0.0.0.0", port=port)
+    else:
+        raise ValueError(
+            f"Transporte MCP no soportado: '{transport}'. Use 'stdio' o 'http'."
+        )
 
 
 if __name__ == "__main__":

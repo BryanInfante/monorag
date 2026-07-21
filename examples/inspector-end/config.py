@@ -18,6 +18,10 @@ LLM_BASE_URL = os.getenv("LLM_BASE_URL") or None
 MONORAG_COLLECTION = os.getenv("MONORAG_COLLECTION", "inspector-end")
 MONORAG_DB_PATH = os.getenv("MONORAG_DB_PATH") or None
 
+# --- Admin ---
+
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+
 # --- Paths ---
 
 EXAMPLE_DIR = Path(__file__).parent

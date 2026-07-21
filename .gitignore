@@ -35,3 +35,6 @@ Thumbs.db
 
 # PAQUETES EDITABLES
 *.egg-info/
+
+# DOCUMENTOS
+.docs/

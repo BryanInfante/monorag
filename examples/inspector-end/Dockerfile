@@ -1,7 +1,7 @@
 # Inspector END — Multi-stage Dockerfile
 #
 # Stage 1: Download the embedding model (heavy, cached layer)
-# Stage 2: Slim runtime with FastAPI app
+# Stage 2: Slim runtime with MCP server + web UI
 
 # --- Stage 1: Model download ---
 FROM python:3.11-slim AS model-downloader
@@ -18,10 +18,10 @@ WORKDIR /app
 # Install git (needed for pip install from GitHub)
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
-# Install MonoRAG from GitHub first (determines starlette version via fastmcp)
+# Install MonoRAG from GitHub (brings fastmcp, starlette, chromadb, etc.)
 RUN pip install --no-cache-dir "git+https://github.com/BryanInfante/monorag.git"
 
-# Install example dependencies (fastapi resolves against already-installed starlette)
+# Install additional example dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -46,7 +46,7 @@ ENV LLM_MODEL=llama-3.3-70b-versatile
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status')" || exit 1
 
 CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8080}"]

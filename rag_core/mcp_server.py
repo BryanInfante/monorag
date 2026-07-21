@@ -811,6 +811,55 @@ def clear_history(collection: str) -> str:
         return f"Error al borrar el historial: {e}"
 
 
+@mcp.tool
+def index_file_content(content_base64: str, filename: str, collection: str) -> str:
+    """Index a file from its base64-encoded content.
+
+    Use this tool to index documents remotely without filesystem access.
+    The client reads the file locally, encodes it in base64, and sends it
+    to this tool. Supported formats: PDF, TXT, MD.
+    """
+    import base64
+    import tempfile
+    from pathlib import Path
+
+    if not content_base64.strip() or not filename.strip() or not collection.strip():
+        return "Error: se requieren 'content_base64', 'filename' y 'collection' no vacíos."
+
+    suffix = Path(filename).suffix.lower()
+    if suffix not in (".pdf", ".txt", ".md"):
+        return f"Error: formato no soportado '{suffix}'. Use .pdf, .txt o .md."
+
+    timeout = _index_timeout_seconds()
+    try:
+        file_bytes = base64.b64decode(content_base64)
+    except Exception as e:
+        return f"Error al decodificar el contenido base64: {e}"
+
+    try:
+        module = _get_or_create(collection)
+
+        def run() -> str:
+            with tempfile.NamedTemporaryFile(
+                suffix=suffix, prefix=f"{Path(filename).stem}_", delete=False
+            ) as tmp:
+                tmp.write(file_bytes)
+                tmp_path = tmp.name
+            try:
+                with _suppress_stdout():
+                    count = module.add_file(tmp_path)
+                return f"Archivo '{filename}' indexado correctamente. Fragmentos añadidos: {count}"
+            finally:
+                Path(tmp_path).unlink(missing_ok=True)
+
+        return _run_with_timeout("tool.index_file_content", timeout, run, collection=collection)
+    except MCPOperationTimeout:
+        return _timeout_error_message("index_file_content", timeout)
+    except Exception as e:
+        logger.error("Error en index_file_content: %s", e)
+        return f"Error al indexar el archivo: {e}"
+
+
 def main():
     """Start the MCP server using STDIO transport."""
     emit_mcp_breadcrumb("mcp_server:startup", detail=f"diagnostics={DIAGNOSTICS_VERSION}")

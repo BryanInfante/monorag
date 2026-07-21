@@ -82,6 +82,7 @@ def test_tools_registered():
         "search",
         "ask",
         "index_file",
+        "index_file_content",
         "index_directory",
         "list_collections",
         "create_collection",
@@ -815,3 +816,83 @@ print("OK")
         f"stderr: {proc.stderr}"
     )
     assert "OK" in proc.stdout
+
+
+# ---------------------------------------------------------------------------
+# index_file_content tool tests
+# ---------------------------------------------------------------------------
+
+
+def test_index_file_content_success(mock_rag_module):
+    import base64
+
+    _, instance = mock_rag_module
+    instance.add_file.return_value = 8
+
+    content = base64.b64encode(b"Some PDF content").decode()
+    result = mcp_server.index_file_content(
+        content_base64=content, filename="manual.pdf", collection="test_col"
+    )
+
+    assert "manual.pdf" in result
+    assert "Fragmentos añadidos: 8" in result
+    instance.add_file.assert_called_once()
+    # Verify temp file was cleaned up
+    call_path = instance.add_file.call_args[0][0]
+    assert not Path(call_path).exists()
+
+
+def test_index_file_content_rejects_unsupported_format(mock_rag_module):
+    import base64
+
+    content = base64.b64encode(b"data").decode()
+    result = mcp_server.index_file_content(
+        content_base64=content, filename="file.xlsx", collection="test_col"
+    )
+
+    assert result.startswith("Error:")
+    assert ".xlsx" in result
+
+
+def test_index_file_content_rejects_empty_params(mock_rag_module):
+    mock_cls, _ = mock_rag_module
+
+    result = mcp_server.index_file_content(
+        content_base64="", filename="doc.pdf", collection="col"
+    )
+    assert result.startswith("Error:")
+    mock_cls.assert_not_called()
+
+    result = mcp_server.index_file_content(
+        content_base64="abc", filename="", collection="col"
+    )
+    assert result.startswith("Error:")
+
+    result = mcp_server.index_file_content(
+        content_base64="abc", filename="doc.pdf", collection=""
+    )
+    assert result.startswith("Error:")
+
+
+def test_index_file_content_invalid_base64(mock_rag_module):
+    result = mcp_server.index_file_content(
+        content_base64="not-valid-base64!!!", filename="doc.pdf", collection="col"
+    )
+
+    assert "Error" in result
+    assert "base64" in result.lower()
+
+
+def test_index_file_content_handles_add_file_error(mock_rag_module):
+    import base64
+
+    _, instance = mock_rag_module
+    instance.add_file.side_effect = RuntimeError("corrupt PDF")
+
+    content = base64.b64encode(b"bad content").decode()
+    result = mcp_server.index_file_content(
+        content_base64=content, filename="bad.pdf", collection="col"
+    )
+
+    assert "Error" in result
+    assert "corrupt PDF" in result

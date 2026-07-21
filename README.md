@@ -366,33 +366,6 @@ You can also inject a full `generator`, `retriever`, `embedder`, or `chunker` if
 
 Duplicate files are detected by filename and skipped automatically.
 
-## Examples
-
-MonoRAG is domain-agnostic. The `examples/` directory shows how to build specialized agents on top of MonoRAG without modifying the core:
-
-### Inspector END
-
-A deployable Streamlit chat agent specialized in Non-Destructive Testing (NDT) standards. Demonstrates:
-
-- Custom agent personality via `agents.md`
-- Custom Generator injection (no core changes)
-- Docker packaging for cloud deployment
-- Read-only chat UI for end users
-
-See [`examples/inspector-end/`](examples/inspector-end/) for full documentation and deployment instructions.
-
-### Build Your Own Agent
-
-To create your own domain-specific agent:
-
-1. Copy `examples/inspector-end/` as a template.
-2. Edit `agents.md` with your agent's personality.
-3. Update `config.py` with your domain's suggested questions.
-4. Index your own documents using the MonoRAG CLI.
-5. Deploy with Docker.
-
-No MonoRAG code changes required.
-
 ## Tests
 
 ```bash

@@ -1,6 +1,0 @@
-# Inspector END example agent dependencies.
-# MonoRAG (installed from GitHub) brings fastmcp, starlette, chromadb, etc.
-# Only additional deps needed for the web server are listed here.
-
-uvicorn
-python-dotenv==1.2.2

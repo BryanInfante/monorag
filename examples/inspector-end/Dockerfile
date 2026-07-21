@@ -40,13 +40,18 @@ RUN mkdir -p /app/data/chroma_db
 
 # Default environment variables
 ENV MONORAG_DB_PATH=/app/data/chroma_db
+ENV MONORAG_CHROMA_URL=http://localhost:8000
 ENV MONORAG_COLLECTION=inspector-end
 ENV LLM_PROVIDER=groq
 ENV LLM_MODEL=llama-3.3-70b-versatile
 
 EXPOSE 8080
+EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status')" || exit 1
 
-CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8080}"]
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
+CMD ["./entrypoint.sh"]
